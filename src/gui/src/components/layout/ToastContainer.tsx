@@ -20,7 +20,7 @@ export default function ToastContainer() {
   const removeToast = useToastStore((s) => s.removeToast)
 
   return (
-    <div className="absolute top-4 right-4 z-40 flex flex-col gap-2.5 w-80 pointer-events-none max-h-[40vh] overflow-y-auto">
+    <div className="absolute top-4 right-4 z-40 flex flex-col gap-2.5 w-80 max-h-[40vh] overflow-y-auto">
       {toasts.map((toast, idx) => {
         const Icon = ICONS[toast.type]
         const color = COLORS[toast.type]

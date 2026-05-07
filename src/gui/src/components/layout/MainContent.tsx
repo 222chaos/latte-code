@@ -1,10 +1,9 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect } from 'react'
 import { useGuiStore } from '../../store/guiStore.ts'
-import { sendWsMessage } from '../../hooks/useWebSocket.ts'
+import { sendWsMessage } from '../../hooks/wsSender.ts'
 import { Bot, Sparkles, Zap, Code, FileCode, Bug } from 'lucide-react'
 import AssistantMessage from '../chat/AssistantMessage.tsx'
 import ToolCallCard from '../chat/ToolCallCard.tsx'
-import BashOutputCard from '../shell/BashOutputCard.tsx'
 import TypingIndicator from '../chat/TypingIndicator.tsx'
 import ScrollButton from './ScrollButton.tsx'
 import PermissionCard from '../permissions/PermissionCard.tsx'
@@ -45,19 +44,35 @@ const QUICK_ACTIONS = [
 export default function MainContent() {
   const messages = useGuiStore((s) => s.messages)
   const toolCalls = useGuiStore((s) => s.toolCalls)
-  const isStreaming = useGuiStore((s) => s.toolCalls.some((tc) => tc.status === 'running'))
+  const isStreaming = useGuiStore((s) => {
+    const hasRunningTools = s.toolCalls.some((tc) => tc.status === 'running')
+    const lastMsg = s.messages[s.messages.length - 1]
+    const lastIsIncomplete = lastMsg?.role === 'assistant' && lastMsg.done === false
+    return hasRunningTools || lastIsIncomplete
+  })
   const scrollRef = useRef<HTMLDivElement>(null)
+  const shouldScrollRef = useRef(true)
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    const el = scrollRef.current
+    if (!el) return
+    if (shouldScrollRef.current) {
+      el.scrollTop = el.scrollHeight
     }
   }, [messages, toolCalls])
+
+  const handleScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    shouldScrollRef.current = nearBottom
+  }
 
   return (
     <div className="flex-1 overflow-hidden relative">
       <div
         ref={scrollRef}
+        onScroll={handleScroll}
         className="absolute inset-0 overflow-y-auto"
         style={{ background: 'var(--content-bg)' }}
       >
@@ -217,49 +232,8 @@ export default function MainContent() {
                         />
                       </div>
 
-                      {/* Tool Calls */}
-                      {msg.toolUses && msg.toolUses.length > 0 && (
-                        <div className="mt-3 md:mt-4 space-y-2 md:space-y-2.5">
-                          {msg.toolUses.map((tu) => {
-                            const call = toolCalls.find(
-                              (tc) => tc.toolUseId === tu.id || (tc.toolName === tu.name && tc.status === 'running')
-                            )
-                            return (
-                              <ToolCallCard
-                                key={tu.id}
-                                toolName={tu.name}
-                                input={tu.input}
-                                status={call?.status ?? 'running'}
-                                output={call?.output}
-                                durationMs={call?.durationMs}
-                              />
-                            )
-                          })}
-                        </div>
-                      )}
-
-                      {/* Tool Results */}
-                      {msg.toolResults?.map((tr) => {
-                        if (tr.content && tr.toolUseId) {
-                          try {
-                            const parsed = JSON.parse(tr.content)
-                            if (parsed.command || parsed.stdout !== undefined) {
-                              return (
-                                <div key={tr.toolUseId} className="mt-3 md:mt-4">
-                                  <BashOutputCard
-                                    command={parsed.command || ''}
-                                    output={parsed.stdout || parsed.output || tr.content}
-                                    exitCode={parsed.exit_code}
-                                  />
-                                </div>
-                              )
-                            }
-                          } catch {
-                            // not JSON
-                          }
-                        }
-                        return null
-                      })}
+                      {/* Note: msg.toolUses / msg.toolResults are not populated by the current
+                          WebSocket handler. Tool calls are rendered globally below instead. */}
                     </div>
                   </div>
                 )}
@@ -271,6 +245,21 @@ export default function MainContent() {
 
           {isStreaming && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && (
             <TypingIndicator />
+          )}
+
+          {toolCalls.length > 0 && (
+            <div className="space-y-2 md:space-y-2.5">
+              {toolCalls.map((tc) => (
+                <ToolCallCard
+                  key={tc.toolUseId || `${tc.toolName}-${JSON.stringify(tc.input)}`}
+                  toolName={tc.toolName}
+                  input={tc.input}
+                  status={tc.status}
+                  output={tc.output}
+                  durationMs={tc.durationMs}
+                />
+              ))}
+            </div>
           )}
         </div>
       </div>

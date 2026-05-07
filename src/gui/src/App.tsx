@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useWebSocket } from './hooks/useWebSocket.ts'
+import { sendWsMessage } from './hooks/wsSender.ts'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts'
 import { useDragDrop } from './hooks/useDragDrop.ts'
 import { useGuiStore } from './store/guiStore.ts'
@@ -18,18 +19,20 @@ export default function App() {
   const connected = useGuiStore((s) => s.connected)
   const sessionName = useGuiStore((s) => s.sessionName)
   const model = useGuiStore((s) => s.model)
-  const { send } = useWebSocket()
 
   const dragState = useDragDrop((files) => {
-    console.log('Dropped files:', files)
+    if (files.length > 0) {
+      const names = files.map((f) => f.name).join(', ')
+      sendWsMessage({ type: 'user_input', payload: { content: `[Attached: ${names}]`, attachments: files.map((f) => f.name) } })
+    }
   })
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const handleNewChat = useCallback(() => {
-    send({ type: 'user_input', payload: { content: '/new' } })
+    sendWsMessage({ type: 'gui_create_session', payload: {} })
     setSidebarOpen(false)
-  }, [send])
+  }, [])
 
   if (!connected) {
     return (

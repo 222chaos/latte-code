@@ -8,7 +8,13 @@ import type { SDKMessage, SDKControlPermissionRequest } from '../entrypoints/sdk
 import type { PermissionDecision } from '../types/permissions.js'
 import { designMdSkill } from '../skills/design-md-skill.js'
 import { generateCapability } from '../skills/bundled/design-md/capabilities/generate.js'
-import type { GuiMessageStream, GuiToolCall, GuiPermissionRequest, GuiDiffPreview, GuiDesignSystem, GuiSessionList, GuiStateSync, GuiError } from '../gui/shared/protocol.js'
+import type { GuiMessageStream, GuiToolCall, GuiPermissionRequest, GuiDiffPreview, GuiDesignSystem, GuiSessionList, GuiStateSync, GuiError, GuiToast } from '../gui/shared/protocol.js'
+import { listSessionsImpl } from '../utils/listSessionsImpl.js'
+import { saveCustomTitle, getTranscriptPathForSession, loadTranscriptFile } from '../utils/sessionStorage.js'
+import { getSessionId, switchSession as bootstrapSwitchSession } from '../bootstrap/state.js'
+import { unlink } from 'fs/promises'
+import { join } from 'path'
+import { existsSync } from 'fs'
 
 type Deferred<T> = {
   promise: Promise<T>
@@ -33,6 +39,10 @@ export class GuiBridge {
   private pendingPermissions = new Map<string, Deferred<PermissionDecision>>()
   private permissionCounter = 0
   private isRunning = false
+  private toolNameMap = new Map<string, string>()
+  private toolInputMap = new Map<string, Record<string, unknown>>()
+  private initPromise: Promise<void> | null = null
+  private totalCost = 0
 
   constructor(guiServer: GuiServer, context: LocalJSXCommandContext) {
     this.guiServer = guiServer
@@ -40,29 +50,206 @@ export class GuiBridge {
   }
 
   async init() {
-    const tools = getAllBaseTools()
-    const fileCache = createFileStateCacheWithSizeLimit(100)
+    if (this.initPromise) return this.initPromise
+    this.initPromise = (async () => {
+      const tools = getAllBaseTools()
+      const fileCache = createFileStateCacheWithSizeLimit(100)
 
-    this.engine = new QueryEngine({
-      cwd: process.cwd(),
-      tools,
-      commands: this.context.options.commands,
-      mcpClients: this.context.options.mcpClients,
-      agents: this.context.options.agentDefinitions?.definitions ?? [],
-      canUseTool: this.wrapCanUseTool(),
-      getAppState: () => this.context.getAppState(),
-      setAppState: (updater) => this.context.setAppState(updater),
-      readFileCache: fileCache,
-      userSpecifiedModel: this.context.options.mainLoopModel,
-      verbose: this.context.options.verbose,
-      thinkingConfig: this.context.options.thinkingConfig,
-      includePartialMessages: true,
-    })
+      this.engine = new QueryEngine({
+        cwd: process.cwd(),
+        tools,
+        commands: this.context.options.commands,
+        mcpClients: this.context.options.mcpClients,
+        agents: this.context.options.agentDefinitions?.definitions ?? [],
+        canUseTool: this.wrapCanUseTool(),
+        getAppState: () => this.context.getAppState(),
+        setAppState: (updater) => this.context.setAppState(updater),
+        readFileCache: fileCache,
+        userSpecifiedModel: this.context.options.mainLoopModel,
+        verbose: this.context.options.verbose,
+        thinkingConfig: this.context.options.thinkingConfig,
+        includePartialMessages: true,
+      })
 
-    logForDebugging('[GuiBridge] QueryEngine initialized')
+      logForDebugging('[GuiBridge] QueryEngine initialized')
+    })()
+
+    this.broadcastCommandList()
+    this.loadSessions()
+
+    return this.initPromise
   }
 
-  async handleUserInput(content: string) {
+  broadcastCommandList() {
+    try {
+      const commands = this.context.options.commands ?? []
+      const visible = commands
+        .filter((cmd: any) => !cmd.isHidden && (cmd.userInvocable !== false))
+        .map((cmd: any) => ({
+          name: cmd.name,
+          description: cmd.description || '',
+          descriptionZh: cmd.descriptionZh,
+          aliases: cmd.aliases,
+          argumentHint: cmd.argumentHint,
+        }))
+      this.broadcast({
+        type: 'gui_command_list',
+        payload: { commands: visible },
+      } as any)
+    } catch (err) {
+      logForDebugging(`[GuiBridge] Failed to broadcast command list: ${err}`)
+    }
+  }
+
+  async loadSessions() {
+    try {
+      const sessions = await listSessionsImpl({ limit: 50 })
+      const formatted = sessions.map((s) => ({
+        id: s.sessionId,
+        name: s.customTitle || s.firstPrompt || s.summary || '(untitled)',
+        timestamp: s.lastModified || Date.now(),
+        messageCount: 0,
+      }))
+      this.broadcast({
+        type: 'gui_session_list',
+        payload: { sessions: formatted },
+      } as GuiSessionList)
+    } catch (err) {
+      logForDebugging(`[GuiBridge] Failed to load sessions: ${err}`)
+    }
+  }
+
+  async handleCreateSession(name?: string) {
+    try {
+      const { regenerateSessionId } = await import('../bootstrap/state.js')
+      regenerateSessionId({ setCurrentAsParent: true })
+
+      if (name) {
+        const sessionId = getSessionId()
+        await saveCustomTitle(sessionId, name)
+      }
+
+      this.engine = null
+      this.totalCost = 0
+      this.toolNameMap.clear()
+      this.toolInputMap.clear()
+      await this.init()
+      this.syncState()
+    } catch (err) {
+      logForDebugging(`[GuiBridge] Failed to create session: ${err}`)
+      this.broadcast({
+        type: 'gui_error',
+        payload: { message: `Failed to create session: ${err instanceof Error ? err.message : String(err)}` },
+      } as GuiError)
+    }
+  }
+
+  async handleSwitchSession(sessionId: string) {
+    try {
+      bootstrapSwitchSession(sessionId as any)
+
+      this.engine = null
+      this.totalCost = 0
+      this.toolNameMap.clear()
+      this.toolInputMap.clear()
+      this.pendingPermissions.clear()
+      await this.init()
+
+      const transcriptPath = getTranscriptPathForSession(sessionId)
+      if (existsSync(transcriptPath)) {
+        try {
+          const transcript = await loadTranscriptFile(transcriptPath)
+          const messages = Array.from(transcript.messages.values())
+            .sort((a: any, b: any) => (a.timestamp || 0) - (b.timestamp || 0))
+            .map((m: any, i: number) => ({
+              id: m.uuid || `msg-${i}`,
+              role: m.role,
+              content: typeof m.message?.content === 'string'
+                ? m.message.content
+                : Array.isArray(m.message?.content)
+                  ? m.message.content.map((b: any) => b.text || b.thinking || '').join('\n')
+                  : '',
+              timestamp: m.timestamp || Date.now(),
+            }))
+
+          this.broadcast({
+            type: 'gui_state_sync',
+            payload: {
+              messages,
+              sessionId,
+              sessionName: 'Resumed Session',
+              model: this.context.options.mainLoopModel,
+              cost: 0,
+              permissionMode: this.context.getAppState().toolPermissionContext?.mode || 'default',
+            },
+          } as GuiStateSync)
+        } catch (err) {
+          logForDebugging(`[GuiBridge] Failed to load transcript for session ${sessionId}: ${err}`)
+          this.syncState()
+        }
+      } else {
+        this.syncState()
+      }
+    } catch (err) {
+      logForDebugging(`[GuiBridge] Failed to switch session: ${err}`)
+      this.broadcast({
+        type: 'gui_error',
+        payload: { message: `Failed to switch session: ${err instanceof Error ? err.message : String(err)}` },
+      } as GuiError)
+    }
+  }
+
+  async handleRenameSession(sessionId: string, name: string) {
+    try {
+      await saveCustomTitle(sessionId as any, name)
+      this.loadSessions()
+    } catch (err) {
+      logForDebugging(`[GuiBridge] Failed to rename session: ${err}`)
+      this.broadcast({
+        type: 'gui_error',
+        payload: { message: `Failed to rename session: ${err instanceof Error ? err.message : String(err)}` },
+      } as GuiError)
+    }
+  }
+
+  async handleDeleteSession(sessionId: string) {
+    try {
+      const transcriptPath = getTranscriptPathForSession(sessionId)
+      if (existsSync(transcriptPath)) {
+        await unlink(transcriptPath)
+      }
+      this.loadSessions()
+    } catch (err) {
+      logForDebugging(`[GuiBridge] Failed to delete session: ${err}`)
+      this.broadcast({
+        type: 'gui_error',
+        payload: { message: `Failed to delete session: ${err instanceof Error ? err.message : String(err)}` },
+      } as GuiError)
+    }
+  }
+
+  handleCreateShare() {
+    const sessionId = this.engine?.getSessionId() || getSessionId()
+    const shareUrl = `latte://session/${sessionId}`
+
+    try {
+      const { execSync } = require('child_process')
+      if (process.platform === 'win32') {
+        execSync(`powershell -command "Set-Clipboard -Value '${shareUrl}'"`, { stdio: 'ignore' })
+      } else if (process.platform === 'darwin') {
+        execSync(`echo '${shareUrl}' | pbcopy`, { stdio: 'ignore' })
+      } else {
+        execSync(`echo '${shareUrl}' | xclip -selection clipboard`, { stdio: 'ignore' })
+      }
+    } catch { /* clipboard not available */ }
+
+    this.broadcast({
+      type: 'gui_toast',
+      payload: { type: 'success', message: `Share link copied: ${shareUrl}` },
+    } as GuiToast)
+  }
+
+  async handleUserInput(content: string, attachments?: string[]) {
     if (!this.engine) {
       await this.init()
     }
@@ -72,25 +259,34 @@ export class GuiBridge {
     }
 
     this.isRunning = true
+
+    let promptContent: string = content
+    if (attachments && attachments.length > 0) {
+      const attachmentInfo = attachments.map((a) => `[Attachment: ${a}]`).join('\n')
+      promptContent = `${attachmentInfo}\n\n${content}`
+    }
+
     this.broadcast({
       type: 'gui_message_stream',
       payload: {
         messageId: `user-${Date.now()}`,
         role: 'user',
-        content,
+        content: promptContent,
         done: true,
         timestamp: Date.now(),
       },
     } as GuiMessageStream)
 
     try {
-      const generator = this.engine!.submitMessage(content)
-      let assistantMessageId = `assistant-${Date.now()}`
-      let currentContent = ''
-      let currentThinking = ''
+      const generator = this.engine!.submitMessage(promptContent)
+      const state = {
+        assistantMessageId: `assistant-${Date.now()}`,
+        currentContent: '',
+        currentThinking: '',
+      }
 
       for await (const msg of generator) {
-        this.handleSDKMessage(msg as SDKMessage, assistantMessageId, currentContent, currentThinking)
+        this.handleSDKMessage(msg as SDKMessage, state)
       }
     } catch (err) {
       logForDebugging(`[GuiBridge] Query error: ${err}`)
@@ -114,13 +310,43 @@ export class GuiBridge {
     if (behavior === 'allow') {
       deferred.resolve({ behavior: 'allow' })
     } else if (behavior === 'always_allow') {
+      const toolName = this.pendingPermissionToolNames.get(requestId)
+      if (toolName) {
+        this.addAlwaysAllowRule(toolName)
+      }
       deferred.resolve({ behavior: 'allow' })
-      // TODO: update permission rules to always allow this tool
     } else {
       deferred.resolve({ behavior: 'deny', message: 'Denied by user via GUI' })
     }
 
     this.pendingPermissions.delete(requestId)
+    this.pendingPermissionToolNames.delete(requestId)
+  }
+
+  private pendingPermissionToolNames = new Map<string, string>()
+
+  private addAlwaysAllowRule(toolName: string) {
+    try {
+      const appState = this.context.getAppState()
+      const currentRules = appState.toolPermissionContext?.alwaysAllowRules ?? {}
+      const sessionRules = currentRules.session ?? []
+      const existingRule = sessionRules.find((r: any) => r.tool === toolName)
+      if (!existingRule) {
+        const newRules = {
+          ...currentRules,
+          session: [...sessionRules, { tool: toolName }],
+        }
+        this.context.setAppState((prev: any) => ({
+          ...prev,
+          toolPermissionContext: {
+            ...prev.toolPermissionContext,
+            alwaysAllowRules: newRules,
+          },
+        }))
+      }
+    } catch (err) {
+      logForDebugging(`[GuiBridge] Failed to add always-allow rule: ${err}`)
+    }
   }
 
   async handleDesignSystemRequest(brand: string, action: string, query?: string) {
@@ -171,11 +397,25 @@ export class GuiBridge {
       const result = await original(tool, input, toolUseContext, assistantMessage, toolUseID)
       if (result.behavior !== 'ask') return result
 
-      // Need to ask user via GUI
       this.permissionCounter++
       const requestId = `perm-${this.permissionCounter}`
       const deferred = createDeferred<PermissionDecision>()
       this.pendingPermissions.set(requestId, deferred)
+      this.pendingPermissionToolNames.set(requestId, tool.name || String(tool))
+
+      const timeoutId = setTimeout(() => {
+        if (this.pendingPermissions.has(requestId)) {
+          this.pendingPermissions.delete(requestId)
+          this.pendingPermissionToolNames.delete(requestId)
+          deferred.resolve({ behavior: 'deny', message: 'Permission request timed out (5 minutes)' })
+          this.broadcast({
+            type: 'gui_error',
+            payload: { message: `Permission timeout: ${tool.name || String(tool)}` },
+          } as GuiError)
+        }
+      }, 5 * 60 * 1000)
+
+      deferred.promise.then(() => clearTimeout(timeoutId), () => clearTimeout(timeoutId))
 
       this.broadcast({
         type: 'gui_permission_request',
@@ -191,10 +431,10 @@ export class GuiBridge {
     }
   }
 
-  private handleSDKMessage(msg: SDKMessage, assistantMessageId: string, currentContent: string, currentThinking: string) {
+  private handleSDKMessage(msg: SDKMessage, state: { assistantMessageId: string; currentContent: string; currentThinking: string }) {
     switch (msg.type) {
       case 'assistant': {
-        const content = msg.message?.content
+        const content = (msg as any).message?.content
         let text = ''
         let thinking = ''
         if (Array.isArray(content)) {
@@ -203,11 +443,16 @@ export class GuiBridge {
               if (block.type === 'text') text += block.text || ''
               if (block.type === 'thinking') thinking += block.thinking || ''
               if (block.type === 'tool_use') {
+                const toolName = block.name || 'unknown'
+                const toolInput = block.input || {}
+                this.toolNameMap.set(block.id, toolName)
+                this.toolInputMap.set(block.id, toolInput)
                 this.broadcast({
                   type: 'gui_tool_call',
                   payload: {
-                    toolName: block.name || 'unknown',
-                    input: block.input || {},
+                    toolUseId: block.id,
+                    toolName,
+                    input: toolInput,
                     status: 'running',
                   },
                 } as GuiToolCall)
@@ -215,10 +460,12 @@ export class GuiBridge {
             }
           }
         }
+        state.currentContent = text
+        state.currentThinking = thinking
         this.broadcast({
           type: 'gui_message_stream',
           payload: {
-            messageId: assistantMessageId,
+            messageId: state.assistantMessageId,
             role: 'assistant',
             content: text,
             thinking: thinking || undefined,
@@ -229,32 +476,43 @@ export class GuiBridge {
         break
       }
 
-      case 'assistant_partial': {
-        const delta = (msg as any).delta || ''
-        if (delta) {
-          this.broadcast({
-            type: 'gui_message_stream',
-            payload: {
-              messageId: assistantMessageId,
-              role: 'assistant',
-              content: delta,
-              done: false,
-              timestamp: Date.now(),
-            },
-          } as GuiMessageStream)
+      case 'stream_event': {
+        const event = (msg as any).event
+        if (event) {
+          if (event.type === 'content_block_delta') {
+            const delta = event.delta
+            if (delta?.type === 'text_delta' && delta.text) {
+              state.currentContent += delta.text
+              this.broadcast({
+                type: 'gui_message_stream',
+                payload: {
+                  messageId: state.assistantMessageId,
+                  role: 'assistant',
+                  content: state.currentContent,
+                  done: false,
+                  timestamp: Date.now(),
+                },
+              } as GuiMessageStream)
+            } else if (delta?.type === 'thinking_delta' && delta.thinking) {
+              state.currentThinking += delta.thinking
+            }
+          }
         }
         break
       }
 
       case 'tool_progress': {
-        const data = (msg as any).data || {}
+        const data = msg as any
+        const toolUseId = data.tool_use_id
+        const toolName = this.toolNameMap.get(toolUseId) || data.tool_name || 'unknown'
+        const input = this.toolInputMap.get(toolUseId) || {}
         this.broadcast({
           type: 'gui_tool_call',
           payload: {
-            toolName: data.tool_name || 'unknown',
-            input: {},
+            toolUseId,
+            toolName,
+            input,
             status: 'running',
-            output: data.output,
             durationMs: data.elapsed_time_seconds ? data.elapsed_time_seconds * 1000 : undefined,
           },
         } as GuiToolCall)
@@ -263,6 +521,9 @@ export class GuiBridge {
 
       case 'result': {
         const result = msg as any
+        if (result.total_cost_usd) {
+          this.totalCost += result.total_cost_usd
+        }
         if (result.permission_denials?.length > 0) {
           for (const denial of result.permission_denials) {
             this.broadcast({
@@ -275,7 +536,7 @@ export class GuiBridge {
       }
 
       case 'user': {
-        const content = msg.message?.content
+        const content = (msg as any).message?.content
         if (Array.isArray(content)) {
           for (const block of content) {
             if (typeof block === 'object' && block && block.type === 'tool_result') {
@@ -286,15 +547,25 @@ export class GuiBridge {
               } else if (Array.isArray(toolResult)) {
                 output = toolResult.map((c: any) => c.text || '').join('')
               }
+              const toolUseId = block.tool_use_id
+              const toolName = this.toolNameMap.get(toolUseId) || 'unknown'
+              const toolInput = this.toolInputMap.get(toolUseId) || { tool_use_id: toolUseId }
+
               this.broadcast({
                 type: 'gui_tool_call',
                 payload: {
-                  toolName: 'result',
-                  input: { tool_use_id: block.tool_use_id },
+                  toolUseId,
+                  toolName,
+                  input: toolInput,
                   status: block.is_error ? 'error' : 'success',
                   output: output.slice(0, 5000),
                 },
               } as GuiToolCall)
+
+              this.tryEmitDiffPreview(toolUseId, toolName, toolInput)
+
+              this.toolNameMap.delete(toolUseId)
+              this.toolInputMap.delete(toolUseId)
             }
           }
         }
@@ -314,21 +585,83 @@ export class GuiBridge {
     }
   }
 
+  private tryEmitDiffPreview(toolUseId: string, toolName: string, input: Record<string, unknown>) {
+    try {
+      const filePath = input.file_path as string
+      if (!filePath) return
+
+      const oldString = input.old_string as string | undefined
+      const newString = input.new_string as string | undefined
+      const content = input.content as string | undefined
+
+      if (oldString !== undefined && newString !== undefined) {
+        const diff = this.buildSimpleDiff(filePath, oldString, newString)
+        this.broadcast({
+          type: 'gui_diff_preview',
+          payload: {
+            filePath,
+            oldContent: oldString,
+            newContent: newString,
+            diff,
+          },
+        } as GuiDiffPreview)
+      } else if (content !== undefined) {
+        this.broadcast({
+          type: 'gui_diff_preview',
+          payload: {
+            filePath,
+            oldContent: '',
+            newContent: content,
+            diff: `--- /dev/null\n+++ ${filePath}\n+${content.slice(0, 2000)}`,
+          },
+        } as GuiDiffPreview)
+      }
+    } catch (err) {
+      logForDebugging(`[GuiBridge] Failed to emit diff preview: ${err}`)
+    }
+  }
+
+  private buildSimpleDiff(filePath: string, oldStr: string, newStr: string): string {
+    const oldLines = oldStr.split('\n')
+    const newLines = newStr.split('\n')
+    const lines: string[] = []
+    for (const line of oldLines) {
+      lines.push(`-${line}`)
+    }
+    for (const line of newLines) {
+      lines.push(`+${line}`)
+    }
+    return `--- a/${filePath}\n+++ b/${filePath}\n@@ -1,${oldLines.length} +1,${newLines.length} @@\n${lines.join('\n')}`
+  }
+
   private syncState() {
     const messages = this.engine?.getMessages() ?? []
     this.broadcast({
       type: 'gui_state_sync',
       payload: {
-        messages: messages.map((m: any, i: number) => ({
-          id: `msg-${i}`,
-          role: m.role,
-          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-          timestamp: Date.now(),
-        })),
-        sessionId: this.engine?.getSessionId() || '',
+        messages: messages.map((m: any, i: number) => {
+          let content = ''
+          if (typeof m.content === 'string') {
+            content = m.content
+          } else if (Array.isArray(m.content)) {
+            content = m.content
+              .filter((block: any) => block && (block.type === 'text' || block.type === 'thinking'))
+              .map((block: any) => block.text || block.thinking || '')
+              .join('\n')
+          } else if (m.content != null) {
+            content = JSON.stringify(m.content)
+          }
+          return {
+            id: m.id || `msg-${i}`,
+            role: m.role,
+            content,
+            timestamp: m.timestamp || Date.now(),
+          }
+        }),
+        sessionId: this.engine?.getSessionId() || String(getSessionId()),
         sessionName: 'GUI Session',
         model: this.context.options.mainLoopModel,
-        cost: 0,
+        cost: this.totalCost,
         permissionMode: this.context.getAppState().toolPermissionContext?.mode || 'default',
       },
     } as GuiStateSync)

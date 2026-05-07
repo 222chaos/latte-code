@@ -11,6 +11,8 @@ export function useDragDrop(onFiles?: (files: File[]) => void) {
   onFilesRef.current = onFiles
 
   const handleDragOver = useCallback((e: DragEvent) => {
+    const hasFiles = Array.from(e.dataTransfer?.types || []).some((t) => t === 'Files')
+    if (!hasFiles) return
     e.preventDefault()
     setState((s) => (s.isDragging ? s : { ...s, isDragging: true }))
   }, [])

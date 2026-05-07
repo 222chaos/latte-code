@@ -15,7 +15,8 @@
     "highlight.js": "^11.11.1",
     "marked": "^17.0.5",
     "framer-motion": "^12.10.0",
-    "lucide-react": "^0.503.0"
+    "lucide-react": "^0.503.0",
+    "dompurify": "^3.2.5"
   },
   "devDependencies": {
     "@types/react": "^19.2.3",

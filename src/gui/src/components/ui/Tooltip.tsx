@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, useRef, useEffect, type ReactNode } from 'react'
 
 interface Props {
   children: ReactNode
@@ -10,21 +10,45 @@ interface Props {
 export default function Tooltip({ children, content, side = 'top', delay = 400 }: Props) {
   const [show, setShow] = useState(false)
   const [visible, setVisible] = useState(false)
-  const timerRef = useState<ReturnType<typeof setTimeout> | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isMountedRef = useRef(true)
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+      if (timerRef.current) clearTimeout(timerRef.current)
+      if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current)
+    }
+  }, [])
 
   if (!content) return <>{children}</>
 
   const handleEnter = () => {
-    timerRef[0] = setTimeout(() => {
+    if (leaveTimerRef.current) {
+      clearTimeout(leaveTimerRef.current)
+      leaveTimerRef.current = null
+    }
+    timerRef.current = setTimeout(() => {
+      if (!isMountedRef.current) return
       setShow(true)
-      requestAnimationFrame(() => setVisible(true))
+      requestAnimationFrame(() => {
+        if (isMountedRef.current) setVisible(true)
+      })
     }, delay)
   }
 
   const handleLeave = () => {
-    if (timerRef[0]) clearTimeout(timerRef[0])
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
     setVisible(false)
-    setTimeout(() => setShow(false), 150)
+    leaveTimerRef.current = setTimeout(() => {
+      if (isMountedRef.current) setShow(false)
+      leaveTimerRef.current = null
+    }, 150)
   }
 
   const positionStyles: Record<string, React.CSSProperties> = {
@@ -32,6 +56,13 @@ export default function Tooltip({ children, content, side = 'top', delay = 400 }
     bottom: { top: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)' },
     left: { right: 'calc(100% + 6px)', top: '50%', transform: 'translateY(-50%)' },
     right: { left: 'calc(100% + 6px)', top: '50%', transform: 'translateY(-50%)' },
+  }
+
+  const enterTransforms: Record<string, string> = {
+    top: 'translateX(-50%) translateY(2px)',
+    bottom: 'translateX(-50%) translateY(-2px)',
+    left: 'translateY(-50%) translateX(2px)',
+    right: 'translateY(-50%) translateX(-2px)',
   }
 
   return (
@@ -56,7 +87,7 @@ export default function Tooltip({ children, content, side = 'top', delay = 400 }
             opacity: visible ? 1 : 0,
             transform: visible
               ? positionStyles[side].transform
-              : `${positionStyles[side].transform?.replace(')', '')} translateY(2px))`,
+              : enterTransforms[side],
             transition: 'opacity 0.15s ease, transform 0.15s ease',
             ...positionStyles[side],
           }}

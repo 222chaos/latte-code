@@ -12,18 +12,21 @@ export function useKeyboardShortcuts() {
       // Ctrl/Cmd + B: toggle sidebar
       if (isMeta && e.key.toLowerCase() === 'b') {
         e.preventDefault()
+        e.stopPropagation()
         toggleSidebar()
       }
 
       // Ctrl/Cmd + I: toggle inspector
       if (isMeta && e.key.toLowerCase() === 'i') {
         e.preventDefault()
+        e.stopPropagation()
         toggleInspector()
       }
 
       // Ctrl/Cmd + K: focus composer
       if (isMeta && e.key.toLowerCase() === 'k') {
         e.preventDefault()
+        e.stopPropagation()
         const textarea = document.querySelector('textarea[placeholder]') as HTMLTextAreaElement | null
         textarea?.focus()
       }

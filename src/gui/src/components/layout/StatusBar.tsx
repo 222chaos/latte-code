@@ -8,6 +8,9 @@ export default function StatusBar() {
   const cost = useGuiStore((s) => s.cost)
   const theme = useGuiStore((s) => s.theme)
   const setTheme = useGuiStore((s) => s.setTheme)
+  const inspectorCollapsed = useGuiStore((s) => s.inspectorCollapsed)
+  const toggleInspector = useGuiStore((s) => s.toggleInspector)
+  const setInspectorTab = useGuiStore((s) => s.setActiveInspectorTab)
 
   return (
     <div
@@ -61,6 +64,10 @@ export default function StatusBar() {
           className="p-1 rounded hover:bg-white/5 transition-colors"
           style={{ color: 'var(--text-tertiary)' }}
           title="Settings"
+          onClick={() => {
+            setInspectorTab('settings')
+            if (inspectorCollapsed) toggleInspector()
+          }}
         >
           <Settings size={12} />
         </button>

@@ -8,15 +8,23 @@ export type ServerMessage =
   | GuiDiffPreview
   | GuiDesignSystem
   | GuiSessionList
+  | GuiCommandList
   | GuiConnected
   | GuiDisconnected
   | GuiError
+  | GuiToast
 
 export type ClientMessage =
   | UserInput
   | UserPermissionResponse
   | UserDesignSystemRequest
   | UserInterrupt
+  | GuiCreateSession
+  | GuiSwitchSession
+  | GuiRenameSession
+  | GuiDeleteSession
+  | GuiCreateShare
+  | GuiLoadSessions
 
 export interface GuiStateSync {
   type: 'gui_state_sync'
@@ -108,6 +116,19 @@ export interface GuiSessionList {
   }
 }
 
+export interface GuiCommandList {
+  type: 'gui_command_list'
+  payload: {
+    commands: Array<{
+      name: string
+      description: string
+      descriptionZh?: string
+      aliases?: string[]
+      argumentHint?: string
+    }>
+  }
+}
+
 export interface GuiConnected {
   type: 'gui_connected'
 }
@@ -119,6 +140,14 @@ export interface GuiDisconnected {
 export interface GuiError {
   type: 'gui_error'
   payload: {
+    message: string
+  }
+}
+
+export interface GuiToast {
+  type: 'gui_toast'
+  payload: {
+    type: 'success' | 'error' | 'info' | 'warning'
     message: string
   }
 }
@@ -155,6 +184,34 @@ export interface UserInterrupt {
   type: 'user_interrupt'
 }
 
+export interface GuiCreateSession {
+  type: 'gui_create_session'
+  payload: { name?: string }
+}
+
+export interface GuiSwitchSession {
+  type: 'gui_switch_session'
+  payload: { sessionId: string }
+}
+
+export interface GuiRenameSession {
+  type: 'gui_rename_session'
+  payload: { sessionId: string; name: string }
+}
+
+export interface GuiDeleteSession {
+  type: 'gui_delete_session'
+  payload: { sessionId: string }
+}
+
+export interface GuiCreateShare {
+  type: 'gui_create_share'
+}
+
+export interface GuiLoadSessions {
+  type: 'gui_load_sessions'
+}
+
 // ─── Shared Data Types ───
 
 export interface GuiMessageItem {
@@ -162,6 +219,7 @@ export interface GuiMessageItem {
   role: 'user' | 'assistant' | 'system'
   content: string
   thinking?: string
+  done?: boolean
   toolUses?: GuiToolUseBlock[]
   toolResults?: GuiToolResultBlock[]
   timestamp: number

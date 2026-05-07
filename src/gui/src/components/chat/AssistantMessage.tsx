@@ -1,5 +1,6 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github-dark.css'
 import { ChevronRight, Copy, Check } from 'lucide-react'
@@ -20,8 +21,33 @@ export default function AssistantMessage({ content, thinking, streaming }: Props
   const contentRef = useRef<HTMLDivElement>(null)
 
   const html = useMemo(() => {
-    const raw = marked.parse(content) as string
-    return raw
+    const safeContent = content ?? ''
+    try {
+      const raw = marked.parse(safeContent) as string
+      return DOMPurify.sanitize(raw, {
+        ALLOWED_TAGS: [
+          'p', 'br', 'hr', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+          'ul', 'ol', 'li', 'strong', 'em', 'b', 'i', 'u', 's', 'strike',
+          'a', 'img', 'code', 'pre', 'blockquote', 'table', 'thead', 'tbody',
+          'tr', 'td', 'th', 'sup', 'sub', 'dl', 'dt', 'dd', 'details', 'summary',
+        ],
+        ALLOWED_ATTR: [
+          'href', 'title', 'src', 'alt', 'class', 'style', 'target', 'rel',
+          'width', 'height',
+        ],
+      })
+    } catch (err) {
+      console.warn('[AssistantMessage] Markdown parse error:', err)
+      // Fallback: render as escaped plain text
+      const escaped = safeContent
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+      return DOMPurify.sanitize(`<p>${escaped}</p>`, {
+        ALLOWED_TAGS: ['p'],
+        ALLOWED_ATTR: [],
+      })
+    }
   }, [content])
 
   useEffect(() => {
@@ -30,6 +56,8 @@ export default function AssistantMessage({ content, thinking, streaming }: Props
     blocks.forEach((block) => {
       hljs.highlightElement(block as HTMLElement)
     })
+
+    const abortControllers: AbortController[] = []
 
     // Enhanced code blocks with language label and copy button
     const pres = contentRef.current.querySelectorAll('pre')
@@ -99,6 +127,10 @@ export default function AssistantMessage({ content, thinking, streaming }: Props
         code.style.display = 'block'
       }
 
+      const ac = new AbortController()
+      abortControllers.push(ac)
+      const { signal } = ac
+
       // Copy handler
       btn.addEventListener('click', () => {
         const codeText = code?.textContent || ''
@@ -109,18 +141,22 @@ export default function AssistantMessage({ content, thinking, streaming }: Props
           btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`
           btn.style.color = 'var(--text-quaternary)'
         }, 2000)
-      })
+      }, { signal })
 
       // Hover effect on pre
       pre.addEventListener('mouseenter', () => {
         btn.style.color = 'var(--text-secondary)'
-      })
+      }, { signal })
       pre.addEventListener('mouseleave', () => {
         if (!btn.style.color.includes('apple-green')) {
           btn.style.color = 'var(--text-quaternary)'
         }
-      })
+      }, { signal })
     })
+
+    return () => {
+      abortControllers.forEach((ac) => ac.abort())
+    }
   }, [html])
 
   return (

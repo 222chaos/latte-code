@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { useWebSocket } from '../../hooks/useWebSocket.ts'
+import { sendWsMessage } from '../../hooks/wsSender.ts'
 import { useGuiStore } from '../../store/guiStore.ts'
 import { Send, Paperclip, ChevronDown, ArrowUp } from 'lucide-react'
 import Tooltip from '../ui/Tooltip.tsx'
+import CommandPalette from './CommandPalette.tsx'
 
 const MODELS = [
   { id: 'claude-opus-4', name: 'Claude Opus 4', tag: 'Opus' },
@@ -15,30 +16,45 @@ export default function Composer() {
   const [value, setValue] = useState('')
   const [modelOpen, setModelOpen] = useState(false)
   const [focused, setFocused] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { send } = useWebSocket()
   const model = useGuiStore((s) => s.model)
   const setModel = useGuiStore((s) => s.setSessionInfo)
 
+  // Show command palette when user types /
+  const showPalette = value.startsWith('/') && !value.includes(' ') && !value.includes('\n')
+
   const handleSubmit = useCallback(() => {
     const trimmed = value.trim()
-    if (!trimmed) return
-    send({ type: 'user_input', payload: { content: trimmed } })
+    if (!trimmed || submitting) return
+    setSubmitting(true)
+    sendWsMessage({ type: 'user_input', payload: { content: trimmed } })
     setValue('')
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
-  }, [value, send])
+    // Re-enable after a short delay to prevent double-submit
+    setTimeout(() => setSubmitting(false), 500)
+  }, [value, submitting])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // Let CommandPalette handle these keys when it's open
+      if (showPalette && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === 'Tab' || e.key === 'Escape')) {
+        return
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
         handleSubmit()
       }
     },
-    [handleSubmit],
+    [handleSubmit, showPalette],
   )
+
+  const handleSelectCommand = useCallback((name: string) => {
+    setValue(`/${name} `)
+    textareaRef.current?.focus()
+  }, [])
 
   useEffect(() => {
     const el = textareaRef.current
@@ -85,9 +101,10 @@ export default function Composer() {
             onKeyDown={handleKeyDown}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
-            placeholder="Ask anything..."
+            placeholder={submitting ? 'Sending...' : 'Ask anything...'}
             rows={1}
-            className="flex-1 resize-none bg-transparent text-[14px] md:text-[15px] leading-relaxed outline-none py-2 md:py-2.5 placeholder:text-[var(--text-quaternary)]"
+            disabled={submitting}
+            className="flex-1 resize-none bg-transparent text-[14px] md:text-[15px] leading-relaxed outline-none py-2 md:py-2.5 placeholder:text-[var(--text-quaternary)] disabled:opacity-50"
             style={{ color: 'var(--text-primary)', maxHeight: '200px' }}
           />
 
@@ -163,7 +180,7 @@ export default function Composer() {
             <Tooltip content={hasValue ? 'Send message' : 'Type a message'} side="top">
               <button
                 onClick={handleSubmit}
-                disabled={!hasValue}
+                disabled={!hasValue || submitting}
                 className="flex items-center justify-center h-8 w-8 md:h-9 md:w-9 rounded-xl transition-all"
                 style={{
                   background: hasValue ? 'var(--accent)' : 'transparent',
@@ -180,6 +197,18 @@ export default function Composer() {
             </Tooltip>
           </div>
         </div>
+
+        {/* ── Command Palette ── */}
+        {showPalette && (
+          <CommandPalette
+            query={value}
+            onSelect={handleSelectCommand}
+            onClose={() => {
+              setValue('')
+              textareaRef.current?.focus()
+            }}
+          />
+        )}
 
         {/* ── Hint ── */}
         <p className="text-center text-[10px] md:text-[11px] mt-2 font-medium" style={{ color: 'var(--text-quaternary)' }}>

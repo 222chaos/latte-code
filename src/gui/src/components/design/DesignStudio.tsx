@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { useGuiStore } from '../../store/guiStore.ts'
-import { useWebSocket } from '../../hooks/useWebSocket.ts'
+import { sendWsMessage } from '../../hooks/wsSender.ts'
+import { useToastStore } from '../../store/toastStore.ts'
 import { Search, Palette, Copy, Check, Sparkles, RefreshCw } from 'lucide-react'
 import Tooltip from '../ui/Tooltip.tsx'
 
 export default function DesignStudio() {
   const current = useGuiStore((s) => s.currentDesignSystem)
-  const { send } = useWebSocket()
+  const addToast = useToastStore((s) => s.addToast)
   const [brand, setBrand] = useState('')
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
@@ -19,11 +20,21 @@ export default function DesignStudio() {
     }
   }, [current, loading])
 
+  // Timeout guard: reset loading if server never responds
+  useEffect(() => {
+    if (!loading) return
+    const timer = setTimeout(() => {
+      setLoading(false)
+      pendingBrand.current = null
+    }, 15000)
+    return () => clearTimeout(timer)
+  }, [loading])
+
   const handleSearch = () => {
     if (!brand.trim()) return
     setLoading(true)
     pendingBrand.current = brand.trim()
-    send({
+    sendWsMessage({
       type: 'user_design_system_request',
       payload: { brand: brand.trim(), action: 'get' },
     })
@@ -36,14 +47,34 @@ export default function DesignStudio() {
   }
 
   const applyTheme = () => {
-    if (!current?.colors) return
+    if (!current) return
     const root = document.documentElement
-    Object.entries(current.colors).forEach(([name, value]) => {
-      root.style.setProperty(`--ds-color-${name}`, value as string)
-    })
+    if (current.colors) {
+      Object.entries(current.colors).forEach(([name, value]) => {
+        root.style.setProperty(`--ds-color-${name}`, value as string)
+      })
+      const primary = Object.values(current.colors)[0] as string | undefined
+      if (primary) {
+        root.style.setProperty('--accent', primary)
+      }
+    }
     if (current.typography?.fontFamily) {
       root.style.setProperty('--ds-font-family', current.typography.fontFamily)
+      root.style.setProperty('--font-sans', current.typography.fontFamily)
     }
+    if (current.layout?.maxWidth) {
+      root.style.setProperty('--content-max-width', current.layout.maxWidth)
+    }
+    if ((current.layout as any)?.gridColumns) {
+      root.style.setProperty('--grid-columns', String((current.layout as any).gridColumns))
+    }
+    if (current.layout?.spacing) {
+      const spacing = parseInt(current.layout.spacing)
+      if (!isNaN(spacing)) {
+        root.style.setProperty('--spacing-unit', `${spacing}px`)
+      }
+    }
+    addToast({ type: 'success', message: `Applied ${current.brand} theme` })
   }
 
   return (

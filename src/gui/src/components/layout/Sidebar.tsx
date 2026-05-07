@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useGuiStore } from '../../store/guiStore.ts'
+import { sendWsMessage } from '../../hooks/wsSender.ts'
 import { Clock, Settings, X, MessageSquare, Sparkles, Pencil, Trash2, Check } from 'lucide-react'
 import Tooltip from '../ui/Tooltip.tsx'
 
@@ -9,6 +10,7 @@ interface Props {
 
 export default function Sidebar({ onClose }: Props) {
   const sessions = useGuiStore((s) => s.sessions)
+  const sessionId = useGuiStore((s) => s.sessionId)
   const deleteSession = useGuiStore((s) => s.deleteSession)
   const renameSession = useGuiStore((s) => s.renameSession)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -20,10 +22,22 @@ export default function Sidebar({ onClose }: Props) {
   }
 
   const confirmRename = (id: string) => {
+    if (editingId === null) return
     if (editValue.trim()) {
       renameSession(id, editValue.trim())
+      sendWsMessage({ type: 'gui_rename_session', payload: { sessionId: id, name: editValue.trim() } })
     }
     setEditingId(null)
+  }
+
+  const handleDelete = (id: string) => {
+    deleteSession(id)
+    sendWsMessage({ type: 'gui_delete_session', payload: { sessionId: id } })
+  }
+
+  const handleSwitch = (id: string) => {
+    sendWsMessage({ type: 'gui_switch_session', payload: { sessionId: id } })
+    onClose()
   }
 
   return (
@@ -120,14 +134,20 @@ export default function Sidebar({ onClose }: Props) {
               ) : (
                 <div
                   className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer"
-                  style={{ color: 'var(--text-secondary)' }}
+                  style={{
+                    color: s.id === sessionId ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    background: s.id === sessionId ? 'var(--bg-hover)' : 'transparent',
+                  }}
+                  onClick={() => handleSwitch(s.id)}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'var(--bg-hover)'
                     e.currentTarget.style.color = 'var(--text-primary)'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent'
-                    e.currentTarget.style.color = 'var(--text-secondary)'
+                    if (s.id !== sessionId) {
+                      e.currentTarget.style.background = 'transparent'
+                      e.currentTarget.style.color = 'var(--text-secondary)'
+                    }
                   }}
                 >
                   <Clock
@@ -153,7 +173,7 @@ export default function Sidebar({ onClose }: Props) {
                     </Tooltip>
                     <Tooltip content="Delete" side="bottom" delay={300}>
                       <button
-                        onClick={(e) => { e.stopPropagation(); deleteSession(s.id) }}
+                        onClick={(e) => { e.stopPropagation(); handleDelete(s.id) }}
                         className="flex items-center justify-center h-6 w-6 rounded-md transition-colors"
                         style={{ color: 'var(--text-quaternary)' }}
                         onMouseEnter={(e) => {
