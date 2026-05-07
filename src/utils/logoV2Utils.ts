@@ -98,10 +98,8 @@ export function calculateOptimalLeftWidth(
  * Formats the welcome message based on username
  */
 export function formatWelcomeMessage(username: string | null): string {
-  if (!username || username.length > MAX_USERNAME_LENGTH) {
-    return 'Welcome back!'
-  }
-  return `Welcome back ${username}!`
+  // Always return Chinese welcome message for Latte
+  return '欢迎回来，码奸'
 }
 
 /**
@@ -334,8 +332,16 @@ export function getRecentReleaseNotesSync(
     return []
   }
 
-  return getRecentReleaseNotes(currentVersion, lastSeenVersion, changelog).slice(
-    0,
-    maxItems,
-  )
+  // Always show all release notes, not just newer versions
+  // Parse changelog directly to get all notes
+  const { parseChangelog } = require('./releaseNotes.js')
+  const releaseNotes = parseChangelog(changelog)
+  
+  // Flatten all notes from all versions
+  const allNotes = Object.entries(releaseNotes)
+    .sort(([versionA], [versionB]) => (gt(versionB, versionA) ? -1 : 1))
+    .flatMap(([, notes]) => notes)
+    .filter(Boolean)
+  
+  return allNotes.slice(0, maxItems)
 }

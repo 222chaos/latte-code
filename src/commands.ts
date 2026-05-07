@@ -255,7 +255,8 @@ export const INTERNAL_ONLY_COMMANDS = [
 
 // Declared as a function so that we don't run this until getCommands is called,
 // since underlying functions read from config, which can't be read at module initialization time
-const COMMANDS = memoize((): Command[] => [
+const COMMANDS = memoize((): Command[] => {
+  const result = [
   addDir,
   advisor,
   agents,
@@ -345,7 +346,9 @@ const COMMANDS = memoize((): Command[] => [
   ...(process.env.USER_TYPE === 'ant' && !process.env.IS_DEMO
     ? INTERNAL_ONLY_COMMANDS
     : []),
-])
+  ]
+  return result
+})
 
 export const builtInCommandNames = memoize(
   (): Set<string> =>
@@ -728,24 +731,32 @@ export function getCommand(commandName: string, commands: Command[]): Command {
  * For model-facing prompts (like SkillTool), use cmd.description directly.
  */
 export function formatDescriptionWithSource(cmd: Command): string {
+  // 检查系统语言，如果有中文描述则使用
+  const shouldShowChinese = process.env.LANG?.startsWith('zh') || 
+                           process.env.LC_ALL?.startsWith('zh') ||
+                           process.env.SHOW_CHINESE === '1'
+  const description = shouldShowChinese && cmd.descriptionZh 
+    ? cmd.descriptionZh 
+    : cmd.description
+  
   if (cmd.type !== 'prompt') {
-    return cmd.description
+    return description
   }
 
   if (cmd.kind === 'workflow') {
-    return `${cmd.description} (workflow)`
+    return `${description} (workflow)`
   }
 
   if (cmd.source === 'plugin') {
     const pluginName = cmd.pluginInfo?.pluginManifest.name
     if (pluginName) {
-      return `(${pluginName}) ${cmd.description}`
+      return `(${pluginName}) ${description}`
     }
-    return `${cmd.description} (plugin)`
+    return `${description} (plugin)`
   }
 
   if (cmd.source === 'builtin' || cmd.source === 'mcp') {
-    return cmd.description
+    return description
   }
 
   if (cmd.source === 'bundled') {

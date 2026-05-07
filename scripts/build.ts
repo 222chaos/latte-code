@@ -10,6 +10,15 @@ const args = process.argv.slice(2)
 const compile = args.includes('--compile')
 const dev = args.includes('--dev')
 
+let targetOverride: string | null = null
+for (let i = 0; i < args.length; i += 1) {
+  const arg = args[i]
+  if (arg === '--target' && args[i + 1]) {
+    targetOverride = args[i + 1]!
+    i += 1
+  }
+}
+
 const fullExperimentalFeatures = [
   'AGENT_MEMORY_SNAPSHOT',
   'AGENT_TRIGGERS',
@@ -111,11 +120,11 @@ const features = [...featureSet]
 
 const outfile = compile
   ? dev
-    ? './dist/cli-dev'
-    : './dist/cli'
+    ? './dist/latte-dev'
+    : './dist/latte'
   : dev
-    ? './cli-dev'
-    : './cli'
+    ? './latte-dev'
+    : './latte'
 const buildTime = new Date().toISOString()
 const version = dev ? getDevVersion(pkg.version) : pkg.version
 
@@ -154,7 +163,7 @@ const defines = {
     'This reconstructed source snapshot does not include Anthropic internal issue routing.',
   ),
   'MACRO.VERSION_CHANGELOG': JSON.stringify(
-    dev ? getVersionChangelog() : 'https://github.com/paoloanzn/claude-code',
+    dev ? getVersionChangelog() : 'https://github.com/wxj-1019/latte-code',
   ),
 } as const
 
@@ -164,7 +173,7 @@ const cmd = [
   './src/entrypoints/cli.tsx',
   '--compile',
   '--target',
-  'bun',
+  targetOverride ?? 'bun',
   '--format',
   'esm',
   '--outfile',

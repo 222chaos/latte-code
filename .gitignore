@@ -1,6 +1,18 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 dist/
+*.exe
 cli
 cli-dev
+latte
+latte-dev
 openclaw/
-.idea
+
+# Build artifacts
+*.bun-build
+
+# IDE
+.idea/
+.vscode/

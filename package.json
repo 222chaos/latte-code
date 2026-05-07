@@ -1,13 +1,13 @@
 {
-  "name": "claude-code-source-snapshot",
-  "version": "2.1.87",
+  "name": "latte",
+  "version": "2.1.91",
   "private": true,
-  "description": "Reconstructed Bun CLI workspace for the Claude Code source snapshot.",
+  "description": "Latte - A buildable fork of Claude Code CLI with telemetry removed and experimental features unlocked.",
   "type": "module",
   "packageManager": "bun@1.3.11",
   "bin": {
-    "claude": "./cli",
-    "claude-source": "./cli"
+    "latte": "./latte",
+    "latte-dev": "./latte-dev"
   },
   "engines": {
     "bun": ">=1.3.11"
@@ -17,7 +17,12 @@
     "build:dev": "bun run ./scripts/build.ts --dev",
     "build:dev:full": "bun run ./scripts/build.ts --dev --feature-set=dev-full",
     "compile": "bun run ./scripts/build.ts --compile",
-    "dev": "bun run ./src/entrypoints/cli.tsx"
+    "dev": "bun run ./src/entrypoints/cli.tsx",
+    "install:global": "bun run ./scripts/install-global.ts install",
+    "uninstall:global": "bun run ./scripts/install-global.ts uninstall",
+    "publish:npm": "bun run ./scripts/publish-npm.ts",
+    "link:global": "bun link",
+    "unlink:global": "bun unlink"
   },
   "dependencies": {
     "@alcalzone/ansi-tokenize": "^0.3.0",

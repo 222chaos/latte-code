@@ -97,10 +97,38 @@ export function modelSupportsThinking(model: string): boolean {
       return true
     }
   }
+  
+  // CRITICAL: Detect known 3rd party model names and disable thinking.
+  // This handles cases where provider detection fails (e.g., incomplete config).
+  // Prevents "reasoning_content is missing" errors on Kimi, DeepSeek, etc.
+  const lowerModel = model.toLowerCase()
+  if (
+    lowerModel.includes('kimi') ||
+    lowerModel.includes('deepseek') ||
+    lowerModel.includes('qwen') ||
+    lowerModel.includes('glm') ||
+    lowerModel.includes('mistral') ||
+    lowerModel.includes('llama') ||
+    lowerModel.includes('gpt-') ||
+    lowerModel.includes('claude') === false  // Not a Claude model
+  ) {
+    // If model name doesn't contain "claude", it's likely a 3rd party model
+    if (!lowerModel.includes('claude')) {
+      return false
+    }
+  }
+  
   // IMPORTANT: Do not change thinking support without notifying the model
   // launch DRI and research. This can greatly affect model quality and bashing.
-  const canonical = getCanonicalName(model)
+  
+  // CRITICAL: OpenAI-compatible providers (Kimi, DeepSeek, etc.) do not support
+  // Claude's thinking mode. This prevents "reasoning_content is missing" errors.
   const provider = getAPIProvider()
+  if (provider === 'openai') {
+    return false
+  }
+  
+  const canonical = getCanonicalName(model)
   // 1P and Foundry: all Claude 4+ models (including Haiku 4.5)
   if (provider === 'foundry' || provider === 'firstParty') {
     return !canonical.includes('claude-3-')
@@ -144,6 +172,14 @@ export function modelSupportsAdaptiveThinking(model: string): boolean {
 }
 
 export function shouldEnableThinkingByDefault(): boolean {
+  // CRITICAL: Disable thinking for 3rd party providers (OpenAI compatible) 
+  // as they don't support Claude's thinking/reasoning mode.
+  // This prevents errors like "reasoning_content is missing" on Kimi, etc.
+  const provider = getAPIProvider()
+  if (provider === 'openai') {
+    return false
+  }
+
   if (process.env.MAX_THINKING_TOKENS) {
     return parseInt(process.env.MAX_THINKING_TOKENS, 10) > 0
   }

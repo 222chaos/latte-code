@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react'
 import { Box, Text } from '../ink.js'
 import { useTerminalSize } from '../hooks/useTerminalSize.js'
+import { useRegisterKeybindingContext } from '../keybindings/KeybindingContext.js'
 import { useKeybinding } from '../keybindings/useKeybinding.js'
 import {
   normalizeCustomModelBaseURL,
@@ -44,6 +45,9 @@ export function CustomModelSetupFlow({
   onCancel,
   completeOnCancel = true,
 }: Props): React.ReactNode {
+  // Register Confirmation context to enable confirm:* keybindings
+  useRegisterKeybindingContext('Confirmation')
+
   const terminal = useTerminalSize()
   const textInputColumns = Math.max(
     20,
@@ -235,13 +239,13 @@ export function CustomModelSetupFlow({
   }, [completeOnCancel, goBack, onCancel, onDone, steps.length])
 
   useKeybinding(
-    'global:cancel',
+    'confirm:no',
     () => {
       if (currentStep.type !== 'saving' && currentStep.type !== 'validating') {
         handleCancel()
       }
     },
-    { isActive: true },
+    { isActive: true, context: 'Confirmation' },
   )
 
   useKeybinding(
@@ -251,7 +255,7 @@ export function CustomModelSetupFlow({
         handleDone()
       }
     },
-    { isActive: currentStep.type === 'success' },
+    { isActive: currentStep.type === 'success', context: 'Confirmation' },
   )
 
   useKeybinding(
@@ -261,7 +265,7 @@ export function CustomModelSetupFlow({
         goBack()
       }
     },
-    { isActive: currentStep.type === 'error' },
+    { isActive: currentStep.type === 'error', context: 'Confirmation' },
   )
 
   const renderStep = (): React.ReactNode => {
@@ -373,6 +377,7 @@ export function CustomModelSetupFlow({
                   },
                 ]}
                 onChange={handleModeSelect}
+                onCancel={handleCancel}
                 visibleOptionCount={5}
               />
             </Box>

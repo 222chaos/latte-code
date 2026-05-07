@@ -72,12 +72,17 @@ export function LogoV2() {
   const agent = useAppState(_temp);
   const effortValue = useAppState(_temp2);
   const config = getGlobalConfig();
-  let changelog;
-  try {
-    changelog = getRecentReleaseNotesSync(3, MACRO.VERSION, config.lastReleaseNotesSeen);
-  } catch {
-    changelog = [];
-  }
+  // Hardcoded changelog for Latte (avoids network blocking on startup)
+  const changelog = [
+    'Chinese localization support for all commands',
+    'Auto-detect system language and respond in Chinese', 
+    'Localized help command with Chinese translations',
+    'Rebranded to "Latte"',
+    'Custom welcome message: "欢迎回来，码奸"'
+  ].slice(0, 3);
+  
+  const hasReleaseNotes = true;
+  
   const [announcement] = useState(() => {
     const announcements = getInitialSettings().companyAnnouncements;
     if (!announcements || announcements.length === 0) {
@@ -85,9 +90,7 @@ export function LogoV2() {
     }
     return config.numStartups === 1 ? announcements[0] : announcements[Math.floor(Math.random() * announcements.length)];
   });
-  const {
-    hasReleaseNotes
-  } = checkForReleaseNotesSync(config.lastReleaseNotesSeen);
+  
   let t2;
   if ($[2] === Symbol.for("react.memo_cache_sentinel")) {
     t2 = () => {
@@ -248,8 +251,8 @@ export function LogoV2() {
   }
   const layoutMode = getLayoutMode(columns);
   const userTheme = resolveThemeSetting(getGlobalConfig().theme);
-  const borderTitle = ` ${color("startupAccent", userTheme)("Free Code")} ${color("inactive", userTheme)(`v${version}`)} `;
-  const compactBorderTitle = color("startupAccent", userTheme)(" Free Code ");
+  const borderTitle = ` ${color("startupAccent", userTheme)("Latte")} ${color("inactive", userTheme)(`v${version}`)} `;
+  const compactBorderTitle = color("startupAccent", userTheme)(" Latte ");
   if (layoutMode === "compact") {
     let welcomeMessage = formatWelcomeMessage(username);
     if (stringWidth(welcomeMessage) > columns - 4) {
