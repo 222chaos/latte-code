@@ -239,13 +239,13 @@ export function CustomModelSetupFlow({
   }, [completeOnCancel, goBack, onCancel, onDone, steps.length])
 
   useKeybinding(
-    'global:cancel',
+    'confirm:no',
     () => {
       if (currentStep.type !== 'saving' && currentStep.type !== 'validating') {
         handleCancel()
       }
     },
-    { isActive: true },
+    { isActive: true, context: 'Confirmation' },
   )
 
   useKeybinding(
@@ -377,6 +377,7 @@ export function CustomModelSetupFlow({
                   },
                 ]}
                 onChange={handleModeSelect}
+                onCancel={handleCancel}
                 visibleOptionCount={5}
               />
             </Box>
