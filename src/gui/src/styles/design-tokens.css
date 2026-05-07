@@ -1,0 +1,406 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   Apple + Claude Design Tokens
+   - Glassmorphism (backdrop-blur + translucent layers)
+   - Generous border-radius (Apple's signature)
+   - Refined shadows (subtle depth, no harsh edges)
+   - Spring animations (Apple's cubic-bezier)
+   - System font stack with antialiasing
+   ============================================================ */
+
+:root {
+  /* ── Background Layers ── */
+  --bg-primary: #000000;
+  --bg-secondary: rgba(255, 255, 255, 0.03);
+  --bg-tertiary: rgba(255, 255, 255, 0.06);
+  --bg-hover: rgba(255, 255, 255, 0.07);
+  --bg-active: rgba(255, 255, 255, 0.10);
+
+  /* ── Glass Surfaces ── */
+  --glass-bg: rgba(28, 28, 30, 0.65);
+  --glass-bg-strong: rgba(28, 28, 30, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.07);
+  --glass-border-strong: rgba(255, 255, 255, 0.12);
+  --glass-backdrop: blur(24px) saturate(180%);
+  --glass-backdrop-strong: blur(40px) saturate(200%);
+
+  /* ── Content Backgrounds ── */
+  --content-bg: #000000;
+  --content-bg-light: #f5f5f7;
+  --sidebar-bg: var(--glass-bg);
+  --sidebar-backdrop: var(--glass-backdrop);
+
+  /* ── Accent (Claude warm tone) ── */
+  --accent: #d97757;
+  --accent-hover: #c46a4e;
+  --accent-muted: rgba(217, 119, 87, 0.15);
+  --accent-glow: rgba(217, 119, 87, 0.25);
+
+  /* ── Apple System Colors (dark) ── */
+  --apple-blue: #0a84ff;
+  --apple-green: #30d158;
+  --apple-red: #ff453a;
+  --apple-orange: #ff9f0a;
+  --apple-yellow: #ffd60a;
+  --apple-purple: #bf5af2;
+  --apple-pink: #ff375f;
+  --apple-teal: #64d2ff;
+  --apple-indigo: #5e5ce6;
+  --apple-gray: #8e8e93;
+
+  /* ── Text ── */
+  --text-primary: rgba(255, 255, 255, 0.95);
+  --text-secondary: rgba(255, 255, 255, 0.55);
+  --text-tertiary: rgba(255, 255, 255, 0.32);
+  --text-quaternary: rgba(255, 255, 255, 0.18);
+  --text-inverse: rgba(0, 0, 0, 0.88);
+
+  /* ── Borders ── */
+  --border-color: rgba(255, 255, 255, 0.06);
+  --border-color-subtle: rgba(255, 255, 255, 0.04);
+  --border-color-strong: rgba(255, 255, 255, 0.12);
+
+  /* ── Cards ── */
+  --card-bg: rgba(255, 255, 255, 0.04);
+  --card-bg-hover: rgba(255, 255, 255, 0.07);
+  --card-border: rgba(255, 255, 255, 0.06);
+  --card-border-hover: rgba(255, 255, 255, 0.10);
+
+  /* ── Radius (Apple scale) ── */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --radius-full: 9999px;
+
+  /* ── Shadows (subtle, layered) ── */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.45);
+  --shadow-floating: 0 16px 64px rgba(0, 0, 0, 0.5);
+  --shadow-accent: 0 0 0 3px var(--accent-muted);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  /* ── Easing (Apple spring + standard) ── */
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── Light Mode ── */
+html.light {
+  --bg-primary: #f5f5f7;
+  --bg-secondary: rgba(0, 0, 0, 0.03);
+  --bg-tertiary: rgba(0, 0, 0, 0.06);
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --bg-active: rgba(0, 0, 0, 0.08);
+
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-bg-strong: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(0, 0, 0, 0.06);
+  --glass-border-strong: rgba(0, 0, 0, 0.12);
+
+  --content-bg: #f5f5f7;
+  --sidebar-bg: var(--glass-bg);
+
+  --accent-muted: rgba(217, 119, 87, 0.12);
+  --accent-glow: rgba(217, 119, 87, 0.2);
+
+  --text-primary: rgba(0, 0, 0, 0.88);
+  --text-secondary: rgba(0, 0, 0, 0.55);
+  --text-tertiary: rgba(0, 0, 0, 0.35);
+  --text-quaternary: rgba(0, 0, 0, 0.18);
+  --text-inverse: rgba(255, 255, 255, 0.95);
+
+  --border-color: rgba(0, 0, 0, 0.06);
+  --border-color-subtle: rgba(0, 0, 0, 0.04);
+  --border-color-strong: rgba(0, 0, 0, 0.12);
+
+  --card-bg: rgba(0, 0, 0, 0.03);
+  --card-bg-hover: rgba(0, 0, 0, 0.06);
+  --card-border: rgba(0, 0, 0, 0.06);
+  --card-border-hover: rgba(0, 0, 0, 0.10);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.14);
+  --shadow-floating: 0 16px 64px rgba(0, 0, 0, 0.18);
+  --shadow-inset: inset 0 1px 0 rgba(0, 0, 0, 0.04);
+}
+
+/* ── Base ── */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", "Segoe UI", Roboto, sans-serif;
+  background: var(--content-bg);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
+  line-height: 1.5;
+}
+
+/* ── Scrollbar (Apple thin style) ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* ── Selection ── */
+::selection {
+  background: var(--accent-muted);
+  color: var(--text-primary);
+}
+
+/* ── Animations ── */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in-scale {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slide-in-bottom {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spring-in-right {
+  from { opacity: 0; transform: translateX(40px) scale(0.96); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+  50% { box-shadow: 0 0 0 6px rgba(217, 119, 87, 0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes typing-dot {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-4px); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.35s var(--ease-out) forwards;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s var(--ease-spring) forwards;
+}
+
+.animate-fade-in-scale {
+  animation: fade-in-scale 0.35s var(--ease-spring) forwards;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.4s var(--ease-spring) forwards;
+}
+
+.animate-slide-in-bottom {
+  animation: slide-in-bottom 0.4s var(--ease-spring) forwards;
+}
+
+.animate-spring-in-right {
+  animation: spring-in-right 0.5s var(--ease-spring) forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s var(--ease-in-out) infinite;
+}
+
+/* ── Shimmer (Apple style skeleton) ── */
+.shimmer-bg {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+html.light .shimmer-bg::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.04) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+}
+
+/* ── Utility Classes ── */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-backdrop);
+  -webkit-backdrop-filter: var(--glass-backdrop);
+}
+
+.glass-strong {
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-backdrop-strong);
+  -webkit-backdrop-filter: var(--glass-backdrop-strong);
+}
+
+/* ── Focus Ring (Apple style) ── */
+*:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-accent);
+}
+
+button, textarea, input, select, [role="button"] {
+  transition: background-color 0.2s var(--ease-out), border-color 0.2s var(--ease-out), transform 0.15s var(--ease-out), box-shadow 0.2s var(--ease-out), opacity 0.15s var(--ease-out);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+/* ── Utility ── */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ── Prose Overrides ── */
+.prose pre {
+  background: rgba(0, 0, 0, 0.35) !important;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  overflow-x: auto;
+  box-shadow: var(--shadow-inset);
+}
+
+.prose code {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--radius-xs);
+  font-size: 0.85em;
+  font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas, monospace;
+}
+
+.prose pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.prose p {
+  margin-bottom: 0.7em;
+  line-height: 1.7;
+}
+
+.prose ul, .prose ol {
+  padding-left: 1.3em;
+  margin-bottom: 0.7em;
+}
+
+.prose li {
+  margin-bottom: 0.3em;
+}
+
+.prose h1, .prose h2, .prose h3, .prose h4 {
+  margin-top: 1.1em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.prose a {
+  color: var(--accent);
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+}
+
+.prose a:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
+.prose blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 1em;
+  margin-left: 0;
+  color: var(--text-secondary);
+}
+
+.prose hr {
+  border-color: var(--border-color);
+}
+
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.prose th, .prose td {
+  padding: 0.5em 0.75em;
+  border: 1px solid var(--card-border);
+}
+
+.prose th {
+  background: var(--card-bg);
+  font-weight: 600;
+}

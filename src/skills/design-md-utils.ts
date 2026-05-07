@@ -379,6 +379,18 @@ export function searchBrands(query: string, category?: string) {
   }
 }
 
+export async function searchDesignSystems(query: string) {
+  return searchBrands(query)
+}
+
+export async function listAllDesignSystems() {
+  return {
+    brands: getAllBrands(),
+    categories: categorizeBrands(),
+    total: getAllBrands().length
+  }
+}
+
 export const designSystemUtils = {
   getAllBrands,
   categorizeBrands,
