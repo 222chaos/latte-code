@@ -1,13 +1,15 @@
-import { useRef, useEffect } from 'react'
+import { memo, useRef, useEffect, useCallback } from 'react'
 import { useGuiStore } from '../../store/guiStore.ts'
-import { sendWsMessage } from '../../hooks/wsSender.ts'
+import { sendWsMessage } from '../../hooks/useWebSocket.ts'
 import { Bot, Sparkles, Zap, Code, FileCode, Bug } from 'lucide-react'
 import AssistantMessage from '../chat/AssistantMessage.tsx'
 import ToolCallCard from '../chat/ToolCallCard.tsx'
+import ToolResultBlock from '../chat/ToolResultBlock.tsx'
 import TypingIndicator from '../chat/TypingIndicator.tsx'
 import ScrollButton from './ScrollButton.tsx'
 import PermissionCard from '../permissions/PermissionCard.tsx'
 import MessageActions from '../chat/MessageActions.tsx'
+import type { GuiMessageItem, GuiToolCall } from '../../shared/protocol.ts'
 
 function formatTime(ts: number) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -41,32 +43,215 @@ const QUICK_ACTIONS = [
   { icon: Bug, label: 'Debug an error' },
 ]
 
+/* ── Memoized Message Row ── */
+interface MessageRowProps {
+  msg: GuiMessageItem
+  idx: number
+  prevTimestamp?: number
+  isLast: boolean
+  isGenerating: boolean
+  totalCount: number
+  toolCalls: GuiToolCall['payload'][]
+}
+
+const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, isGenerating, totalCount, toolCalls }: MessageRowProps) {
+  // Note: toolCalls is a prop (not a store subscription) so memo can compare it.
+  // A custom comparator below skips toolCalls comparison for messages without tool uses.
+  const isUser = msg.role === 'user'
+  const time = formatTime(msg.timestamp)
+  const showDivider = idx === 0 || (prevTimestamp !== undefined && !isSameDay(msg.timestamp, prevTimestamp))
+  const shouldAnimate = idx >= totalCount - 8
+  const animDelay = shouldAnimate ? `${Math.min((idx - (totalCount - 8)) * 30, 300)}ms` : undefined
+
+  return (
+    <div style={{ contentVisibility: 'auto', containIntrinsicSize: '0 80px' }}>
+      {/* ── Date Divider ── */}
+      {showDivider && (
+        <div className="flex items-center justify-center my-5 md:my-6">
+          <div className="h-px flex-1" style={{ background: 'var(--border-color-subtle)' }} />
+          <span
+            className="px-3 text-[10px] font-medium uppercase tracking-[0.08em]"
+            style={{ color: 'var(--text-quaternary)' }}
+          >
+            {formatDateDivider(msg.timestamp)}
+          </span>
+          <div className="h-px flex-1" style={{ background: 'var(--border-color-subtle)' }} />
+        </div>
+      )}
+
+      {isUser ? (
+        /* ── User Message ── */
+        <div
+          className={`flex justify-end group ${shouldAnimate ? 'animate-fade-in-up' : ''}`}
+          style={animDelay ? { animationDelay: animDelay } : undefined}
+        >
+          <div className="max-w-[88%] sm:max-w-[82%] flex flex-col items-end gap-1">
+            <div
+              className="rounded-[20px] md:rounded-[22px] rounded-tr-sm px-4 md:px-5 py-2.5 md:py-3.5 text-[14px] md:text-[15px] leading-relaxed break-words"
+              style={{
+                background: 'var(--bg-secondary)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color-subtle)',
+                boxShadow: 'var(--shadow-xs)',
+              }}
+            >
+              {msg.content}
+            </div>
+            <div className="flex items-center gap-2 mr-1">
+              <span
+                className="text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                style={{ color: 'var(--text-quaternary)' }}
+              >
+                {time}
+              </span>
+              <MessageActions
+                content={msg.content ?? ''}
+                role="user"
+                onEdit={() => {
+                  const ta = document.querySelector('textarea[data-composer]') as HTMLTextAreaElement | null
+                  if (ta) {
+                    ta.value = msg.content
+                    ta.dispatchEvent(new Event('input', { bubbles: true }))
+                    ta.focus()
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* ── AI Message ── */
+        <div
+          className={`flex gap-3 md:gap-3.5 group ${shouldAnimate ? 'animate-fade-in-up' : ''}`}
+          style={animDelay ? { animationDelay: animDelay } : undefined}
+        >
+          {/* Avatar */}
+          <div
+            className="flex h-7 w-7 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-[8px] md:rounded-[10px] mt-0.5"
+            style={{
+              background: 'var(--card-bg)',
+              border: '1px solid var(--card-border)',
+              color: 'var(--accent)',
+              boxShadow: 'var(--shadow-xs)',
+            }}
+          >
+            <Bot size={16} strokeWidth={1.5} />
+          </div>
+
+          <div className="flex-1 min-w-0 pt-0.5">
+            {/* Name + Time + Actions */}
+            <div className="flex items-center gap-2 mb-1.5 md:mb-2">
+              <span className="text-[12px] md:text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                Claude
+              </span>
+              <span
+                className="text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                style={{ color: 'var(--text-quaternary)' }}
+              >
+                {time}
+              </span>
+              <MessageActions
+                content={msg.content ?? ''}
+                role="assistant"
+                thinking={msg.thinking}
+                onRegenerate={() => sendWsMessage({ type: 'user_input', payload: { content: '/retry' } })}
+              />
+            </div>
+
+            {/* Content */}
+            <div className="text-[14px] md:text-[15px] leading-[1.65] md:leading-[1.7]" style={{ color: 'var(--text-primary)' }}>
+              <AssistantMessage
+                content={msg.content}
+                thinking={msg.thinking}
+                streaming={isLast && isGenerating}
+              />
+            </div>
+
+            {/* Tool Calls */}
+            {msg.toolUses && msg.toolUses.length > 0 && (
+              <div className="mt-3 md:mt-4 space-y-2 md:space-y-2.5">
+                {msg.toolUses.map((tu) => {
+                  const call = toolCalls.find(
+                    (tc) => tc.toolUseId === tu.id || (tc.toolName === tu.name && tc.status === 'running')
+                  )
+                  const matchingResult = msg.toolResults?.find((tr) => tr.toolUseId === tu.id)
+                  const derivedStatus = matchingResult
+                    ? (matchingResult.isError ? 'error' : 'success')
+                    : (call?.status ?? 'running')
+                  return (
+                    <ToolCallCard
+                      key={tu.id}
+                      toolName={tu.name}
+                      input={tu.input}
+                      status={derivedStatus as 'running' | 'success' | 'error'}
+                      output={call?.output ?? matchingResult?.content}
+                      durationMs={call?.durationMs}
+                    />
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Tool Results */}
+            {msg.toolResults?.map((tr) => (
+              <ToolResultBlock key={tr.toolUseId} toolResult={tr} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}, (prev, next) => {
+  // Custom comparator: skip toolCalls comparison for messages without tool uses
+  if (prev.msg.id !== next.msg.id ||
+      prev.idx !== next.idx ||
+      prev.isLast !== next.isLast ||
+      prev.isGenerating !== next.isGenerating ||
+      prev.totalCount !== next.totalCount ||
+      prev.prevTimestamp !== next.prevTimestamp ||
+      prev.msg.content !== next.msg.content ||
+      prev.msg.thinking !== next.msg.thinking ||
+      prev.msg.toolUses !== next.msg.toolUses ||
+      prev.msg.toolResults !== next.msg.toolResults) return false
+  // Only compare toolCalls if this message has tool uses
+  if (next.msg.toolUses && next.msg.toolUses.length > 0 && prev.toolCalls !== next.toolCalls) return false
+  return true
+})
+
 export default function MainContent() {
   const messages = useGuiStore((s) => s.messages)
+  const isGenerating = useGuiStore((s) => s.isGenerating)
   const toolCalls = useGuiStore((s) => s.toolCalls)
-  const isStreaming = useGuiStore((s) => {
-    const hasRunningTools = s.toolCalls.some((tc) => tc.status === 'running')
-    const lastMsg = s.messages[s.messages.length - 1]
-    const lastIsIncomplete = lastMsg?.role === 'assistant' && lastMsg.done === false
-    return hasRunningTools || lastIsIncomplete
-  })
   const scrollRef = useRef<HTMLDivElement>(null)
-  const shouldScrollRef = useRef(true)
+  const userScrolledUp = useRef(false)
+  const pendingRaf = useRef(0)
 
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    if (shouldScrollRef.current) {
-      el.scrollTop = el.scrollHeight
+    // Cancel any pending scroll to avoid stacking RAFs during rapid streaming
+    if (pendingRaf.current) cancelAnimationFrame(pendingRaf.current)
+    pendingRaf.current = requestAnimationFrame(() => {
+      pendingRaf.current = 0
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+      if (!userScrolledUp.current || nearBottom) {
+        el.scrollTop = el.scrollHeight
+      }
+    })
+    return () => {
+      if (pendingRaf.current) {
+        cancelAnimationFrame(pendingRaf.current)
+        pendingRaf.current = 0
+      }
     }
-  }, [messages, toolCalls])
+  }, [messages])
 
-  const handleScroll = () => {
+  const handleScroll = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-    shouldScrollRef.current = nearBottom
-  }
+    userScrolledUp.current = !nearBottom
+  }, [])
 
   return (
     <div className="flex-1 overflow-hidden relative">
@@ -94,10 +279,10 @@ export default function MainContent() {
                 className="text-xl md:text-[22px] font-semibold tracking-tight"
                 style={{ color: 'var(--text-primary)' }}
               >
-                How can I help you today?
+                有什么可以帮你的吗？
               </h1>
               <p className="text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
-                Ask anything or choose a quick action below
+                输入任何问题，或选择下方快捷操作
               </p>
             </div>
             <div className="flex flex-wrap justify-center gap-2 md:gap-2.5 mt-1 md:mt-2 max-w-lg">
@@ -132,134 +317,23 @@ export default function MainContent() {
 
         {/* ── Messages ── */}
         <div className="max-w-3xl mx-auto px-3 md:px-4 py-6 md:py-8 space-y-6 md:space-y-8">
-          {messages.map((msg, idx) => {
-            const isLast = idx === messages.length - 1
-            const isUser = msg.role === 'user'
-            const time = formatTime(msg.timestamp)
-            const showDivider = idx === 0 || !isSameDay(msg.timestamp, messages[idx - 1].timestamp)
-
-            return (
-              <div key={msg.id}>
-                {/* ── Date Divider ── */}
-                {showDivider && (
-                  <div className="flex items-center justify-center my-6 md:my-8">
-                    <div className="h-px flex-1" style={{ background: 'var(--border-color)' }} />
-                    <span
-                      className="px-3 text-[10px] md:text-[11px] font-semibold uppercase tracking-wider"
-                      style={{ color: 'var(--text-quaternary)' }}
-                    >
-                      {formatDateDivider(msg.timestamp)}
-                    </span>
-                    <div className="h-px flex-1" style={{ background: 'var(--border-color)' }} />
-                  </div>
-                )}
-
-                {isUser ? (
-                  /* ── User Message ── */
-                  <div
-                    className="flex justify-end animate-fade-in-up group"
-                    style={{ animationDelay: `${Math.min(idx * 30, 300)}ms` }}
-                  >
-                    <div className="max-w-[88%] md:max-w-[82%] flex flex-col items-end gap-1">
-                      <div
-                        className="rounded-[20px] md:rounded-[22px] rounded-tr-sm px-4 md:px-5 py-2.5 md:py-3.5 text-[14px] md:text-[15px] leading-relaxed"
-                        style={{
-                          background: 'var(--bg-secondary)',
-                          color: 'var(--text-primary)',
-                          border: '1px solid var(--border-color-subtle)',
-                          boxShadow: 'var(--shadow-xs)',
-                        }}
-                      >
-                        {msg.content}
-                      </div>
-                      <div className="flex items-center gap-2 mr-1">
-                        <span
-                          className="text-[10px] font-medium"
-                          style={{ color: 'var(--text-quaternary)' }}
-                        >
-                          {time}
-                        </span>
-                        <MessageActions content={msg.content} role="user" />
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  /* ── AI Message ── */
-                  <div
-                    className="flex gap-3 md:gap-3.5 animate-fade-in-up group"
-                    style={{ animationDelay: `${Math.min(idx * 30, 300)}ms` }}
-                  >
-                    {/* Avatar */}
-                    <div
-                      className="flex h-7 w-7 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-[8px] md:rounded-[10px] mt-0.5"
-                      style={{
-                        background: 'var(--card-bg)',
-                        border: '1px solid var(--card-border)',
-                        color: 'var(--accent)',
-                        boxShadow: 'var(--shadow-xs)',
-                      }}
-                    >
-                      <Bot size={16} strokeWidth={1.5} />
-                    </div>
-
-                    <div className="flex-1 min-w-0 pt-0.5">
-                      {/* Name + Time + Actions */}
-                      <div className="flex items-center gap-2 mb-1.5 md:mb-2">
-                        <span
-                          className="text-[12px] md:text-[13px] font-semibold"
-                          style={{ color: 'var(--text-primary)' }}
-                        >
-                          Claude
-                        </span>
-                        <span
-                          className="text-[10px] font-medium"
-                          style={{ color: 'var(--text-quaternary)' }}
-                        >
-                          {time}
-                        </span>
-                        <MessageActions content={msg.content} role="assistant" />
-                      </div>
-
-                      {/* Content */}
-                      <div
-                        className="text-[14px] md:text-[15px] leading-[1.65] md:leading-[1.7]"
-                        style={{ color: 'var(--text-primary)' }}
-                      >
-                        <AssistantMessage
-                          content={msg.content}
-                          thinking={msg.thinking}
-                          streaming={isLast && isStreaming}
-                        />
-                      </div>
-
-                      {/* Note: msg.toolUses / msg.toolResults are not populated by the current
-                          WebSocket handler. Tool calls are rendered globally below instead. */}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+          {messages.map((msg, idx) => (
+            <MessageRow
+              key={msg.id}
+              msg={msg}
+              idx={idx}
+              prevTimestamp={messages[idx - 1]?.timestamp}
+              isLast={idx === messages.length - 1}
+              isGenerating={isGenerating}
+              totalCount={messages.length}
+              toolCalls={toolCalls}
+            />
+          ))}
 
           <PermissionCard />
 
-          {isStreaming && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && (
+          {isGenerating && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && (
             <TypingIndicator />
-          )}
-
-          {toolCalls.length > 0 && (
-            <div className="space-y-2 md:space-y-2.5">
-              {toolCalls.map((tc) => (
-                <ToolCallCard
-                  key={tc.toolUseId || `${tc.toolName}-${JSON.stringify(tc.input)}`}
-                  toolName={tc.toolName}
-                  input={tc.input}
-                  status={tc.status}
-                  output={tc.output}
-                  durationMs={tc.durationMs}
-                />
-              ))}
-            </div>
           )}
         </div>
       </div>

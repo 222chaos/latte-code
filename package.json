@@ -4,6 +4,7 @@
   "private": true,
   "description": "Latte - A buildable fork of Claude Code CLI with telemetry removed and experimental features unlocked.",
   "type": "module",
+  "workspaces": ["src/gui"],
   "packageManager": "bun@1.3.11",
   "bin": {
     "latte": "./latte",
@@ -22,7 +23,7 @@
     "uninstall:global": "bun run ./scripts/install-global.ts uninstall",
     "publish:npm": "bun run ./scripts/publish-npm.ts",
     "gui:dev": "cd src/gui && bunx vite --port 5173",
-    "gui:build": "cd src/gui && bunx vite build",
+    "gui:build": "cd src/gui && bun run build",
     "link:global": "bun link",
     "unlink:global": "bun unlink"
   },

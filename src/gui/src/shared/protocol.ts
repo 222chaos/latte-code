@@ -2,29 +2,28 @@
 
 export type ServerMessage =
   | GuiStateSync
+  | GuiMetadataSync
   | GuiMessageStream
   | GuiToolCall
   | GuiPermissionRequest
   | GuiDiffPreview
   | GuiDesignSystem
   | GuiSessionList
-  | GuiCommandList
   | GuiConnected
   | GuiDisconnected
   | GuiError
-  | GuiToast
+  | Pong
+  | GuiModelsSync
+  | GuiSourcesSync
+  | GuiPlanSync
 
 export type ClientMessage =
   | UserInput
   | UserPermissionResponse
   | UserDesignSystemRequest
   | UserInterrupt
-  | GuiCreateSession
-  | GuiSwitchSession
-  | GuiRenameSession
-  | GuiDeleteSession
-  | GuiCreateShare
-  | GuiLoadSessions
+  | UserSessionSwitch
+  | Ping
 
 export interface GuiStateSync {
   type: 'gui_state_sync'
@@ -36,6 +35,19 @@ export interface GuiStateSync {
     branch?: string
     cost: number
     permissionMode: string
+    isHistoryView?: boolean
+  }
+}
+
+export interface GuiMetadataSync {
+  type: 'gui_metadata_sync'
+  payload: {
+    sessionId?: string
+    sessionName?: string
+    model?: string
+    branch?: string
+    cost?: number
+    permissionMode?: string
   }
 }
 
@@ -46,8 +58,8 @@ export interface GuiMessageStream {
     role: 'user' | 'assistant' | 'system'
     content?: string
     thinking?: string
-    toolUse?: GuiToolUseBlock
-    toolResult?: GuiToolResultBlock
+    toolUses?: GuiToolUseBlock[]
+    toolResults?: GuiToolResultBlock[]
     done?: boolean
     timestamp: number
   }
@@ -81,7 +93,9 @@ export interface GuiDiffPreview {
     filePath: string
     oldContent: string
     newContent: string
-    diff: string
+    diff?: string
+    toolName?: string
+    accepted?: boolean
   }
 }
 
@@ -116,19 +130,6 @@ export interface GuiSessionList {
   }
 }
 
-export interface GuiCommandList {
-  type: 'gui_command_list'
-  payload: {
-    commands: Array<{
-      name: string
-      description: string
-      descriptionZh?: string
-      aliases?: string[]
-      argumentHint?: string
-    }>
-  }
-}
-
 export interface GuiConnected {
   type: 'gui_connected'
 }
@@ -140,14 +141,6 @@ export interface GuiDisconnected {
 export interface GuiError {
   type: 'gui_error'
   payload: {
-    message: string
-  }
-}
-
-export interface GuiToast {
-  type: 'gui_toast'
-  payload: {
-    type: 'success' | 'error' | 'info' | 'warning'
     message: string
   }
 }
@@ -184,32 +177,40 @@ export interface UserInterrupt {
   type: 'user_interrupt'
 }
 
-export interface GuiCreateSession {
-  type: 'gui_create_session'
-  payload: { name?: string }
+export interface UserSessionSwitch {
+  type: 'user_session_switch'
+  payload: {
+    sessionId: string
+  }
 }
 
-export interface GuiSwitchSession {
-  type: 'gui_switch_session'
-  payload: { sessionId: string }
+export interface Ping {
+  type: 'ping'
 }
 
-export interface GuiRenameSession {
-  type: 'gui_rename_session'
-  payload: { sessionId: string; name: string }
+export interface Pong {
+  type: 'pong'
 }
 
-export interface GuiDeleteSession {
-  type: 'gui_delete_session'
-  payload: { sessionId: string }
+export interface GuiModelsSync {
+  type: 'gui_models_sync'
+  payload: {
+    models: Array<{ id: string; name: string; description?: string }>
+  }
 }
 
-export interface GuiCreateShare {
-  type: 'gui_create_share'
+export interface GuiSourcesSync {
+  type: 'gui_sources_sync'
+  payload: {
+    sources: Array<{ name: string; path: string; type: 'file' | 'dir' }>
+  }
 }
 
-export interface GuiLoadSessions {
-  type: 'gui_load_sessions'
+export interface GuiPlanSync {
+  type: 'gui_plan_sync'
+  payload: {
+    planItems: Array<{ id: string; text: string; status: 'pending' | 'in_progress' | 'done' }>
+  }
 }
 
 // ─── Shared Data Types ───
@@ -219,7 +220,6 @@ export interface GuiMessageItem {
   role: 'user' | 'assistant' | 'system'
   content: string
   thinking?: string
-  done?: boolean
   toolUses?: GuiToolUseBlock[]
   toolResults?: GuiToolResultBlock[]
   timestamp: number

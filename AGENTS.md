@@ -115,6 +115,9 @@ bun run build:dev:full
 # 编译为独立二进制到 dist 目录 → ./dist/latte
 bun run compile
 
+# 跳过 GUI 构建（快速迭代 CLI 逻辑）
+bun run build -- --skip-gui
+
 # 不编译直接运行源码（启动较慢，适合开发调试）
 bun run dev
 

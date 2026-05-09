@@ -12,27 +12,36 @@ export function useKeyboardShortcuts() {
       // Ctrl/Cmd + B: toggle sidebar
       if (isMeta && e.key.toLowerCase() === 'b') {
         e.preventDefault()
-        e.stopPropagation()
         toggleSidebar()
       }
 
       // Ctrl/Cmd + I: toggle inspector
       if (isMeta && e.key.toLowerCase() === 'i') {
         e.preventDefault()
-        e.stopPropagation()
         toggleInspector()
       }
 
       // Ctrl/Cmd + K: focus composer
       if (isMeta && e.key.toLowerCase() === 'k') {
         e.preventDefault()
-        e.stopPropagation()
-        const textarea = document.querySelector('textarea[placeholder]') as HTMLTextAreaElement | null
+        const textarea = document.querySelector('textarea[data-composer]') as HTMLTextAreaElement | null
         textarea?.focus()
       }
 
-      // Escape: blur composer if focused
+      // Escape: close overlays or blur composer
       if (e.key === 'Escape') {
+        const sidebarOpen = !useGuiStore.getState().sidebarCollapsed
+        const inspectorOpen = !useGuiStore.getState().inspectorCollapsed
+        if (inspectorOpen) {
+          e.preventDefault()
+          toggleInspector()
+          return
+        }
+        if (sidebarOpen) {
+          e.preventDefault()
+          toggleSidebar()
+          return
+        }
         const active = document.activeElement
         if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) {
           active.blur()

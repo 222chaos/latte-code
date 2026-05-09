@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react'
 import { useWebSocket } from './hooks/useWebSocket.ts'
-import { sendWsMessage } from './hooks/wsSender.ts'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.ts'
 import { useDragDrop } from './hooks/useDragDrop.ts'
 import { useGuiStore } from './store/guiStore.ts'
@@ -14,25 +13,31 @@ import ErrorBoundary from './components/layout/ErrorBoundary.tsx'
 import Tooltip from './components/ui/Tooltip.tsx'
 
 export default function App() {
-  useWebSocket()
+  const { send } = useWebSocket()
   useKeyboardShortcuts()
   const connected = useGuiStore((s) => s.connected)
   const sessionName = useGuiStore((s) => s.sessionName)
   const model = useGuiStore((s) => s.model)
 
   const dragState = useDragDrop((files) => {
-    if (files.length > 0) {
-      const names = files.map((f) => f.name).join(', ')
-      sendWsMessage({ type: 'user_input', payload: { content: `[Attached: ${names}]`, attachments: files.map((f) => f.name) } })
-    }
+    if (files.length === 0) return
+    const names = files.map((f) => f.name).join(', ')
+    send({
+      type: 'user_input',
+      payload: {
+        content: files.length === 1 ? `Attached file: ${names}` : `Attached ${files.length} files: ${names}`,
+        attachments: files.map((f) => f.dataUrl),
+      },
+    })
   })
 
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const sidebarOpen = !useGuiStore((s) => s.sidebarCollapsed)
+  const toggleSidebar = useGuiStore((s) => s.toggleSidebar)
 
   const handleNewChat = useCallback(() => {
-    sendWsMessage({ type: 'gui_create_session', payload: {} })
-    setSidebarOpen(false)
-  }, [])
+    send({ type: 'user_input', payload: { content: '/new' } })
+    toggleSidebar()
+  }, [send, toggleSidebar])
 
   if (!connected) {
     return (
@@ -123,7 +128,7 @@ export default function App() {
         >
           <div className="flex items-center gap-1.5 md:gap-2">
             <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
+              onClick={toggleSidebar}
               className="flex items-center justify-center h-8 w-8 md:h-9 md:w-9 rounded-xl transition-colors"
               style={{ color: 'var(--text-secondary)' }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
@@ -167,7 +172,7 @@ export default function App() {
 
         {/* ── Main body ── */}
         <div className="flex flex-1 overflow-hidden relative">
-          {sidebarOpen && <Sidebar onClose={() => setSidebarOpen(false)} />}
+          {sidebarOpen && <Sidebar onClose={toggleSidebar} />}
           <main className="flex flex-col flex-1 min-w-0 overflow-hidden relative">
             <MainContent />
             <Composer />

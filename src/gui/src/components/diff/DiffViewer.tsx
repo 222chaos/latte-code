@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import { diffLines } from 'diff'
 import { FileCode, ChevronDown, ChevronUp, Check, X } from 'lucide-react'
 import Tooltip from '../ui/Tooltip.tsx'
 
@@ -6,15 +7,38 @@ interface Props {
   filePath: string
   oldContent: string
   newContent: string
-  diff: string
+  diff?: string
   onAccept?: () => void
   onReject?: () => void
 }
 
-export default function DiffViewer({ filePath, diff, onAccept, onReject }: Props) {
+interface DiffLine {
+  value: string
+  added?: boolean
+  removed?: boolean
+}
+
+export default function DiffViewer({ filePath, oldContent, newContent, diff, onAccept, onReject }: Props) {
   const [expanded, setExpanded] = useState(true)
 
-  const lines = diff.split('\n')
+  const lines = useMemo<DiffLine[]>(() => {
+    if (diff) {
+      return diff.split('\n').map((line) => ({
+        value: line.slice(1),
+        added: line.startsWith('+'),
+        removed: line.startsWith('-'),
+      }))
+    }
+    const changes = diffLines(oldContent ?? '', newContent ?? '')
+    return changes.flatMap((change) => {
+      const text = change.value.endsWith('\n') ? change.value.slice(0, -1) : change.value
+      return text.split('\n').map((line) => ({
+        value: line,
+        added: change.added,
+        removed: change.removed,
+      }))
+    })
+  }, [oldContent, newContent, diff])
 
   return (
     <div
@@ -89,15 +113,15 @@ export default function DiffViewer({ filePath, diff, onAccept, onReject }: Props
               {lines.map((line, i) => {
                 let bg = 'transparent'
                 let color = 'var(--text-secondary)'
-                if (line.startsWith('+')) {
+                let prefix = ' '
+                if (line.added) {
                   bg = 'rgba(48, 209, 88, 0.08)'
                   color = 'var(--apple-green)'
-                } else if (line.startsWith('-')) {
+                  prefix = '+'
+                } else if (line.removed) {
                   bg = 'rgba(255, 69, 58, 0.08)'
                   color = 'var(--apple-red)'
-                } else if (line.startsWith('@@')) {
-                  bg = 'rgba(10, 132, 255, 0.06)'
-                  color = 'var(--apple-blue)'
+                  prefix = '-'
                 }
                 return (
                   <tr key={i} style={{ background: bg }}>
@@ -108,7 +132,7 @@ export default function DiffViewer({ filePath, diff, onAccept, onReject }: Props
                       {i + 1}
                     </td>
                     <td className="px-2 py-0.5 whitespace-pre" style={{ color }}>
-                      {line}
+                      {prefix}{line.value}
                     </td>
                   </tr>
                 )

@@ -1159,6 +1159,10 @@ export class QueryEngine {
     this.abortController.abort()
   }
 
+  resetAbortController(): void {
+    this.abortController = createAbortController()
+  }
+
   getMessages(): readonly Message[] {
     return this.mutableMessages
   }

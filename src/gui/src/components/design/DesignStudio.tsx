@@ -14,10 +14,18 @@ export default function DesignStudio() {
   const pendingBrand = useRef<string | null>(null)
 
   useEffect(() => {
-    if (loading && current && pendingBrand.current && current.brand.toLowerCase() === pendingBrand.current.toLowerCase()) {
+    if (!loading) return
+    if (current && pendingBrand.current && current.brand.toLowerCase() === pendingBrand.current.toLowerCase()) {
       setLoading(false)
       pendingBrand.current = null
+      return
     }
+    // Safety timeout: reset loading after 15s if no response
+    const timeout = setTimeout(() => {
+      setLoading(false)
+      pendingBrand.current = null
+    }, 15000)
+    return () => clearTimeout(timeout)
   }, [current, loading])
 
   // Timeout guard: reset loading if server never responds

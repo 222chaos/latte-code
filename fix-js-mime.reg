@@ -1,0 +1,13 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CLASSES_ROOT\.mjs]
+"Content Type"="application/javascript"
+"PerceivedType"="text"
+
+[HKEY_CLASSES_ROOT\.cjs]
+"Content Type"="application/javascript"
+"PerceivedType"="text"
+
+[HKEY_CLASSES_ROOT\.tsx]
+"Content Type"="application/typescript"
+"PerceivedType"="text"

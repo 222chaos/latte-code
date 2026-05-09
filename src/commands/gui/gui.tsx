@@ -81,31 +81,21 @@ function GuiCommand({ onDone, args, context }: GuiCommandProps) {
         logForDebugging(`[GUI] Server started at ${result.url}`)
 
         // Initialize bridge
-        ;(async () => {
-          try {
-            guiBridgeInstance = new GuiBridge(server, context)
-            await guiBridgeInstance.init()
-            server.updateCallbacks({
-              onUserInput: (content, attachments) => guiBridgeInstance?.handleUserInput(content, attachments),
-              onPermissionResponse: (requestId, behavior) => guiBridgeInstance?.handlePermissionResponse(requestId, behavior),
-              onInterrupt: () => guiBridgeInstance?.handleInterrupt(),
-              onDesignSystemRequest: (brand, action, query) => guiBridgeInstance?.handleDesignSystemRequest(brand, action, query),
-              onClientConnected: () => {
-                guiBridgeInstance?.broadcastCommandList()
-                guiBridgeInstance?.loadSessions()
-              },
-              onCreateSession: (name) => guiBridgeInstance?.handleCreateSession(name),
-              onSwitchSession: (sessionId) => guiBridgeInstance?.handleSwitchSession(sessionId),
-              onRenameSession: (sessionId, name) => guiBridgeInstance?.handleRenameSession(sessionId, name),
-              onDeleteSession: (sessionId) => guiBridgeInstance?.handleDeleteSession(sessionId),
-              onCreateShare: () => guiBridgeInstance?.handleCreateShare(),
-              onLoadSessions: () => guiBridgeInstance?.loadSessions(),
-            })
-            logForDebugging('[GUI] Bridge initialized')
-          } catch (err) {
-            logForDebugging(`[GUI] Bridge init error: ${err}`)
-          }
-        })()
+        try {
+          guiBridgeInstance = new GuiBridge(server, context)
+          server.updateCallbacks({
+            onUserInput: (content, attachments) => guiBridgeInstance?.handleUserInput(content, attachments),
+            onPermissionResponse: (requestId, behavior) => guiBridgeInstance?.handlePermissionResponse(requestId, behavior),
+            onInterrupt: () => guiBridgeInstance?.handleInterrupt(),
+            onDesignSystemRequest: (brand, action, query) => guiBridgeInstance?.handleDesignSystemRequest(brand, action, query),
+            onClientConnect: () => guiBridgeInstance?.handleClientConnect(),
+            onClientDisconnect: () => guiBridgeInstance?.handleClientDisconnect(),
+            onSessionSwitch: (sessionId) => guiBridgeInstance?.handleSessionSwitch(sessionId),
+          })
+          logForDebugging('[GUI] Bridge initialized')
+        } catch (err) {
+          logForDebugging(`[GUI] Bridge init error: ${err}`)
+        }
 
         openBrowser(result.url)
       })

@@ -1,29 +1,25 @@
-import { useState } from 'react'
 import { Shield, Check, X, Infinity } from 'lucide-react'
-import { sendWsMessage } from '../../hooks/wsSender.ts'
+import { sendWsMessage } from '../../hooks/useWebSocket.ts'
 import { useGuiStore } from '../../store/guiStore.ts'
 
 export default function PermissionCard() {
   const permissions = useGuiStore((s) => s.pendingPermissions)
   const removePermission = useGuiStore((s) => s.removePermission)
-  const [respondingIds, setRespondingIds] = useState<Set<string>>(new Set())
 
   if (permissions.length === 0) return null
 
   const respond = (requestId: string, behavior: 'allow' | 'deny' | 'always_allow') => {
-    if (respondingIds.has(requestId)) return
-    setRespondingIds((prev) => new Set(prev).add(requestId))
     sendWsMessage({ type: 'user_permission_response', payload: { requestId, behavior } })
     removePermission(requestId)
   }
 
   return (
     <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 w-full max-w-xl px-4">
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2.5 max-h-[60vh] overflow-y-auto no-scrollbar">
         {permissions.map((p, idx) => (
           <div
             key={p.requestId}
-            className="rounded-[20px] p-5 animate-slide-in-bottom"
+            className="rounded-2xl p-4 md:p-5 animate-slide-in-bottom"
             style={{
               background: 'var(--glass-bg-strong)',
               backdropFilter: 'var(--glass-backdrop-strong)',
@@ -36,12 +32,12 @@ export default function PermissionCard() {
             {/* ── Header ── */}
             <div className="flex items-center gap-2.5 mb-3">
               <div
-                className="flex h-7 w-7 items-center justify-center rounded-[8px]"
+                className="flex h-7 w-7 items-center justify-center rounded-lg"
                 style={{ background: 'rgba(255, 149, 0, 0.12)' }}
               >
                 <Shield size={14} style={{ color: 'var(--apple-orange)' }} />
               </div>
-              <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+              <span className="text-[13px] md:text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
                 Permission Request
               </span>
               <span
@@ -57,7 +53,7 @@ export default function PermissionCard() {
 
             {/* ── Description ── */}
             <div
-              className="rounded-[12px] px-3.5 py-2.5 text-[12px] font-mono mb-4 overflow-x-auto"
+              className="rounded-xl px-3.5 py-2.5 text-[11px] md:text-[12px] font-mono mb-3.5 overflow-x-auto"
               style={{
                 background: 'rgba(0, 0, 0, 0.3)',
                 color: 'var(--text-secondary)',
@@ -68,34 +64,29 @@ export default function PermissionCard() {
             </div>
 
             {/* ── Actions ── */}
-            <div className="flex gap-2.5">
+            <div className="flex gap-2">
               <button
                 onClick={() => respond(p.requestId, 'allow')}
-                disabled={respondingIds.has(p.requestId)}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-[12px] text-[13px] font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[12px] md:text-[13px] font-semibold transition-all"
                 style={{
                   background: 'var(--apple-green)',
                   color: '#000',
                 }}
-                onMouseEnter={(e) => {
-                  if (!respondingIds.has(p.requestId)) e.currentTarget.style.opacity = '0.9'
-                }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
                 onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
               >
-                <Check size={15} strokeWidth={2.5} />
+                <Check size={14} strokeWidth={2.5} />
                 Allow
               </button>
               <button
                 onClick={() => respond(p.requestId, 'deny')}
-                disabled={respondingIds.has(p.requestId)}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-[12px] text-[13px] font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[12px] md:text-[13px] font-semibold transition-all"
                 style={{
                   background: 'var(--card-bg)',
                   color: 'var(--text-secondary)',
                   border: '1px solid var(--card-border)',
                 }}
                 onMouseEnter={(e) => {
-                  if (respondingIds.has(p.requestId)) return
                   e.currentTarget.style.background = 'var(--card-bg-hover)'
                   e.currentTarget.style.borderColor = 'var(--card-border-hover)'
                 }}
@@ -104,20 +95,18 @@ export default function PermissionCard() {
                   e.currentTarget.style.borderColor = 'var(--card-border)'
                 }}
               >
-                <X size={15} strokeWidth={2.5} />
+                <X size={14} strokeWidth={2.5} />
                 Deny
               </button>
               <button
                 onClick={() => respond(p.requestId, 'always_allow')}
-                disabled={respondingIds.has(p.requestId)}
-                className="flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-[12px] text-[13px] font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[12px] md:text-[13px] font-semibold transition-all"
                 style={{
                   background: 'var(--card-bg)',
                   color: 'var(--text-tertiary)',
                   border: '1px solid var(--card-border)',
                 }}
                 onMouseEnter={(e) => {
-                  if (respondingIds.has(p.requestId)) return
                   e.currentTarget.style.background = 'var(--card-bg-hover)'
                   e.currentTarget.style.borderColor = 'var(--card-border-hover)'
                   e.currentTarget.style.color = 'var(--text-secondary)'
@@ -129,7 +118,7 @@ export default function PermissionCard() {
                 }}
                 title="Always allow this tool"
               >
-                <Infinity size={15} strokeWidth={2} />
+                <Infinity size={14} strokeWidth={2} />
               </button>
             </div>
           </div>

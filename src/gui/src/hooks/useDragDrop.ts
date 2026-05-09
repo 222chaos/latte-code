@@ -5,7 +5,16 @@ interface DragDropState {
   files: File[]
 }
 
-export function useDragDrop(onFiles?: (files: File[]) => void) {
+export interface FileAttachment {
+  name: string
+  type: string
+  size: number
+  dataUrl: string
+}
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+
+export function useDragDrop(onFiles?: (files: FileAttachment[]) => void) {
   const [state, setState] = useState<DragDropState>({ isDragging: false, files: [] })
   const onFilesRef = useRef(onFiles)
   onFilesRef.current = onFiles
@@ -27,7 +36,37 @@ export function useDragDrop(onFiles?: (files: File[]) => void) {
     e.preventDefault()
     const dropped = Array.from(e.dataTransfer?.files || [])
     setState({ isDragging: false, files: dropped })
-    if (dropped.length > 0) onFilesRef.current?.(dropped)
+    if (dropped.length > 0) {
+      const validFiles = dropped.filter((file) => {
+        if (file.size > MAX_FILE_SIZE) {
+          console.warn(`[DragDrop] File too large, skipped: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`)
+          return false
+        }
+        return true
+      })
+      if (validFiles.length === 0) return
+      Promise.all(
+        validFiles.map(
+          (file) =>
+            new Promise<FileAttachment>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () =>
+                resolve({
+                  name: file.name,
+                  type: file.type,
+                  size: file.size,
+                  dataUrl: reader.result as string,
+                })
+              reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`))
+              reader.readAsDataURL(file)
+            }),
+        ),
+      ).then((attachments) => {
+        onFilesRef.current?.(attachments)
+      }).catch((err) => {
+        console.error('[DragDrop]', err)
+      })
+    }
   }, [])
 
   useEffect(() => {

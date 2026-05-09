@@ -114,9 +114,9 @@ export default function Inspector() {
                       {diffs.length} file{diffs.length > 1 ? 's' : ''} changed
                     </span>
                   </div>
-                  {diffs.map((d, i) => (
+                  {diffs.map((d) => (
                     <DiffViewer
-                      key={i}
+                      key={d.filePath}
                       filePath={d.filePath}
                       oldContent={d.oldContent}
                       newContent={d.newContent}

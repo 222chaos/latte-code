@@ -5,17 +5,22 @@ import Tooltip from '../ui/Tooltip.tsx'
 interface Props {
   content: string
   role: 'user' | 'assistant'
+  thinking?: string
   onRegenerate?: () => void
   onEdit?: () => void
 }
 
-export default function MessageActions({ content, role, onRegenerate, onEdit }: Props) {
+export default function MessageActions({ content, role, thinking, onRegenerate, onEdit }: Props) {
   const [copied, setCopied] = useState(false)
   const [liked, setLiked] = useState(false)
   const [disliked, setDisliked] = useState(false)
 
   const copy = async () => {
-    await navigator.clipboard.writeText(content)
+    let text = content ?? ''
+    if (thinking) {
+      text = `<thinking>\n${thinking}\n</thinking>\n\n${text}`
+    }
+    await navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

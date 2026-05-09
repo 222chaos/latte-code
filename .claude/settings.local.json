@@ -18,7 +18,13 @@
       "Bash(xargs ls:*)",
       "Bash(find . -type f -name *.json -o -name *.ts -o -name *.tsx -o -name *.md)",
       "Bash(wc -l src/**/*.ts src/**/*.tsx)",
-      "Bash(xargs wc:*)"
+      "Bash(xargs wc:*)",
+      "Bash(bun add:*)",
+      "Bash(command find:*)",
+      "Bash(gfind \"E:/project/latte-code/src\" -name \"model*\" -type f)",
+      "Bash(gfind \"E:/project/latte-code/src\" -name \"provider*\" -type f)",
+      "Bash(command grep:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

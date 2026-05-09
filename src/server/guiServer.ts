@@ -1,19 +1,22 @@
 import { Server, type ServerWebSocket } from 'bun'
-import { join, extname, resolve, isAbsolute, dirname } from 'path'
+import { join, extname, resolve, isAbsolute } from 'path'
 import { existsSync } from 'fs'
 import { logForDebugging } from '../utils/debug.js'
+import { EMBEDDED_ASSETS } from './embeddedAssets.js'
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.cjs': 'application/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
   '.gif': 'image/gif',
+  '.webp': 'image/webp',
   '.ico': 'image/x-icon',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
@@ -31,13 +34,9 @@ export type GuiServerCallbacks = {
   onPermissionResponse?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow') => void
   onInterrupt?: () => void
   onDesignSystemRequest?: (brand: string, action: string, query?: string) => void
-  onClientConnected?: () => void
-  onCreateSession?: (name?: string) => void
-  onSwitchSession?: (sessionId: string) => void
-  onRenameSession?: (sessionId: string, name: string) => void
-  onDeleteSession?: (sessionId: string) => void
-  onCreateShare?: () => void
-  onLoadSessions?: () => void
+  onSessionSwitch?: (sessionId: string) => void
+  onClientConnect?: () => void
+  onClientDisconnect?: () => void
 }
 
 type WsData = { id: string }
@@ -60,27 +59,18 @@ export class GuiServer {
   }
 
   private resolveDistDir(): string {
-    // For compiled binaries, import.meta.dir is the binary's directory,
-    // so ../../dist/gui may point outside the project. We try multiple
-    // candidates and pick the first one that actually contains index.html.
-    const binaryDir = process.argv[0] ? dirname(process.argv[0]) : ''
     const candidates = [
+      // Source execution: src/server/ -> src/ -> project root -> dist/gui
       resolve(import.meta.dir, '..', '..', 'dist', 'gui'),
+      // Compiled binary next to dist/gui (e.g. binary at project root)
+      resolve(import.meta.dir, 'dist', 'gui'),
+      // Fallback to cwd
       resolve(process.cwd(), 'dist', 'gui'),
-      binaryDir ? resolve(binaryDir, 'dist', 'gui') : '',
-      binaryDir ? resolve(binaryDir, '..', 'dist', 'gui') : '',
-    ].filter(Boolean)
-
+    ]
     for (const p of candidates) {
-      if (existsSync(join(p, 'index.html'))) {
-        logForDebugging(`[GuiServer] Found GUI dist at: ${p}`)
-        return p
-      }
+      if (existsSync(join(p, 'index.html'))) return p
     }
-
-    logForDebugging(`[GuiServer] WARNING: No GUI dist found. Checked:\n${candidates.map((c) => '  - ' + c).join('\n')}`)
-    // Fallback to cwd-based path so serveStatic can return a helpful error.
-    return candidates[1] || candidates[0]
+    return candidates[0]
   }
 
   async start(): Promise<{ port: number; url: string }> {
@@ -116,13 +106,7 @@ export class GuiServer {
       hostname: '127.0.0.1',
 
       fetch(req, server) {
-        let url: URL
-        try {
-          url = new URL(req.url)
-        } catch {
-          const host = req.headers.get('host') || `127.0.0.1:${self.port}`
-          url = new URL(req.url, `http://${host}`)
-        }
+        const url = new URL(req.url)
 
         if (url.pathname === '/health') {
           return new Response(JSON.stringify({ status: 'ok', clients: self.clients.size }), {
@@ -131,13 +115,8 @@ export class GuiServer {
         }
 
         if (url.pathname === '/ws') {
-          logForDebugging(`[GuiServer] WS upgrade request from ${req.headers.get('user-agent')?.slice(0, 50)}`)
           const upgraded = server.upgrade(req, { data: { id: crypto.randomUUID() } })
-          if (upgraded) {
-            logForDebugging('[GuiServer] WS upgrade succeeded')
-            return
-          }
-          logForDebugging('[GuiServer] WS upgrade failed')
+          if (upgraded) return undefined
           return new Response('WebSocket upgrade failed', { status: 500 })
         }
 
@@ -147,37 +126,26 @@ export class GuiServer {
       websocket: {
         open(ws) {
           self.clients.set(ws.data.id, ws)
-          logForDebugging(`[GuiServer] Client connected: ${ws.data.id}, total clients: ${self.clients.size}`)
-          try {
-            ws.send(JSON.stringify({ type: 'gui_connected' }))
-          } catch (err) {
-            logForDebugging(`[GuiServer] Failed to send gui_connected: ${err}`)
-          }
-          try {
-            self.callbacks.onClientConnected?.()
-          } catch (err) {
-            logForDebugging(`[GuiServer] onClientConnected error: ${err}`)
-          }
+          logForDebugging(`[GuiServer] Client connected: ${ws.data.id}`)
+          ws.send(JSON.stringify({ type: 'gui_connected' }))
+          self.callbacks.onClientConnect?.()
         },
 
         message(ws, message) {
           try {
-            const text = typeof message === 'string' ? message : message.toString()
-            logForDebugging(`[GuiServer] Message from ${ws.data.id}: ${text.slice(0, 200)}`)
-            const msg = JSON.parse(text)
-            self.handleClientMessage(msg)
+            const msg = JSON.parse(typeof message === 'string' ? message : message.toString())
+            self.handleClientMessage(msg, ws)
           } catch (err) {
             logForDebugging(`[GuiServer] Bad message from ${ws.data.id}: ${err}`)
           }
         },
 
-        close(ws, code, reason) {
+        close(ws) {
           self.clients.delete(ws.data.id)
-          logForDebugging(`[GuiServer] Client disconnected: ${ws.data.id}, code=${code}, reason=${reason}`)
-        },
-
-        error(ws, err) {
-          logForDebugging(`[GuiServer] WS error for ${ws.data.id}: ${err}`)
+          logForDebugging(`[GuiServer] Client disconnected: ${ws.data.id}`)
+          if (self.clients.size === 0) {
+            self.callbacks.onClientDisconnect?.()
+          }
         },
       },
     })
@@ -194,13 +162,7 @@ export class GuiServer {
   }
 
   broadcast(data: unknown) {
-    let json: string
-    try {
-      json = JSON.stringify(data)
-    } catch (err) {
-      logForDebugging(`[GuiServer] Failed to serialize broadcast: ${err}`)
-      return
-    }
+    const json = JSON.stringify(data)
     for (const ws of this.clients.values()) {
       try {
         ws.send(json)
@@ -221,7 +183,7 @@ export class GuiServer {
     return `http://127.0.0.1:${this.port}`
   }
 
-  private handleClientMessage(msg: { type: string; payload?: Record<string, unknown> }) {
+  private handleClientMessage(msg: { type: string; payload?: Record<string, unknown> }, ws: ServerWebSocket<WsData>) {
     const cb = this.callbacks
     switch (msg.type) {
       case 'user_input':
@@ -246,26 +208,14 @@ export class GuiServer {
           msg.payload?.query as string | undefined,
         )
         break
-      case 'gui_create_session':
-        cb.onCreateSession?.(msg.payload?.name as string | undefined)
+      case 'user_session_switch':
+        cb.onSessionSwitch?.(msg.payload?.sessionId as string)
         break
-      case 'gui_switch_session':
-        cb.onSwitchSession?.(msg.payload?.sessionId as string)
-        break
-      case 'gui_rename_session':
-        cb.onRenameSession?.(
-          msg.payload?.sessionId as string,
-          msg.payload?.name as string,
-        )
-        break
-      case 'gui_delete_session':
-        cb.onDeleteSession?.(msg.payload?.sessionId as string)
-        break
-      case 'gui_create_share':
-        cb.onCreateShare?.()
-        break
-      case 'gui_load_sessions':
-        cb.onLoadSessions?.()
+      case 'ping':
+        // Application-level heartbeat
+        try {
+          ws.send(JSON.stringify({ type: 'pong' }))
+        } catch { /* client may have disconnected */ }
         break
       default:
         logForDebugging(`[GuiServer] Unknown message type: ${msg.type}`)
@@ -274,6 +224,24 @@ export class GuiServer {
 
   private async serveStatic(pathname: string): Promise<Response> {
     const filePath = pathname === '/' ? '/index.html' : pathname
+
+    // 1. Try embedded assets first (compiled binary)
+    const embedded = EMBEDDED_ASSETS[filePath]
+    if (embedded) {
+      const ext = extname(filePath)
+      const contentType = MIME_TYPES[ext] ?? 'application/octet-stream'
+      const body = embedded.isBase64
+        ? Buffer.from(embedded.content, 'base64')
+        : embedded.content
+      return new Response(body, {
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': this.devMode ? 'no-cache' : 'public, max-age=3600',
+        },
+      })
+    }
+
+    // 2. Fallback to filesystem
     const fullPath = resolve(this.distDir, `.${filePath}`)
 
     if (!isAbsolute(fullPath) || !fullPath.startsWith(this.distDir)) {
@@ -281,49 +249,19 @@ export class GuiServer {
     }
 
     if (!existsSync(fullPath)) {
-      // Only fall back to index.html for SPA routes (paths without file extensions).
-      // Known static assets like .ico, .js, .css should return 404 if missing
-      // to prevent browsers from trying to parse HTML as the wrong MIME type.
-      const ext = extname(filePath)
-      const isLikelyStaticAsset = ext.length > 0 && ext !== '.html'
-
-      if (!isLikelyStaticAsset) {
-        const indexPath = join(this.distDir, 'index.html')
-        if (existsSync(indexPath)) {
-          return new Response(Bun.file(indexPath), {
-            headers: { 'Content-Type': 'text/html; charset=utf-8' },
-          })
-        }
+      const indexPath = join(this.distDir, 'index.html')
+      if (existsSync(indexPath)) {
+        return new Response(Bun.file(indexPath).stream(), {
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        })
       }
-
-      // If the dist directory itself is missing, return a helpful error page
-      // instead of a bare 404 so users know they need to build the GUI.
-      if (!existsSync(this.distDir)) {
-        return new Response(
-          `<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><title>Latte GUI — Not Built</title></head>
-<body style="font-family:system-ui,sans-serif;max-width:600px;margin:60px auto;padding:0 20px;color:#333">
-  <h1>☕ Latte GUI 未构建</h1>
-  <p>GUI 前端文件不存在：<code style="background:#f4f4f5;padding:2px 6px;border-radius:4px">${this.distDir}</code></p>
-  <p>请先执行以下命令构建 GUI：</p>
-  <pre style="background:#18181b;color:#e4e4e7;padding:16px;border-radius:8px;overflow-x:auto"><code>cd src/gui
-bun install
-bun run build</code></pre>
-  <p>然后再重新启动 CLI 并运行 <code>/gui</code> 命令。</p>
-</body>
-</html>`,
-          { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
-        )
-      }
-
       return new Response('Not Found', { status: 404 })
     }
 
     const ext = extname(fullPath)
     const contentType = MIME_TYPES[ext] ?? 'application/octet-stream'
 
-    return new Response(Bun.file(fullPath), {
+    return new Response(Bun.file(fullPath).stream(), {
       headers: {
         'Content-Type': contentType,
         'Cache-Control': this.devMode ? 'no-cache' : 'public, max-age=3600',

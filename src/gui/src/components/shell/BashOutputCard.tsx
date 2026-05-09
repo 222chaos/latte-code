@@ -12,12 +12,12 @@ export default function BashOutputCard({ command, output, exitCode }: Props) {
   const [copied, setCopied] = useState(false)
 
   const copy = async () => {
-    await navigator.clipboard.writeText(output)
+    await navigator.clipboard.writeText(output ?? '')
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const lines = output.split('\n')
+  const lines = (output ?? '').split('\n')
   const isLong = lines.length > 20
   const displayOutput = isLong && !expanded ? lines.slice(0, 20).join('\n') + '\n...' : output
 

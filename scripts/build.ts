@@ -9,6 +9,7 @@ const pkg = await Bun.file(new URL('../package.json', import.meta.url)).json() a
 const args = process.argv.slice(2)
 const compile = args.includes('--compile')
 const dev = args.includes('--dev')
+const skipGui = args.includes('--skip-gui')
 
 let targetOverride: string | null = null
 for (let i = 0; i < args.length; i += 1) {
@@ -195,6 +196,37 @@ for (const feature of features) {
 
 for (const [key, value] of Object.entries(defines)) {
   cmd.push('--define', `${key}=${value}`)
+}
+
+// Build GUI static assets first so they are available for the CLI binary
+if (!skipGui) {
+  console.log('[build] Building GUI...')
+  const guiProc = Bun.spawnSync({
+    cmd: ['bun', 'run', 'gui:build'],
+    cwd: process.cwd(),
+    stdout: 'inherit',
+    stderr: 'inherit',
+  })
+
+  if (guiProc.exitCode !== 0) {
+    console.error('[build] GUI build failed')
+    process.exit(guiProc.exitCode ?? 1)
+  }
+
+  // Embed GUI assets into TypeScript module for compiled binary
+  console.log('[build] Embedding GUI assets...')
+  const embedProc = Bun.spawnSync({
+    cmd: ['bun', 'run', 'scripts/embedGuiAssets.ts'],
+    cwd: process.cwd(),
+    stdout: 'inherit',
+    stderr: 'inherit',
+  })
+  if (embedProc.exitCode !== 0) {
+    console.error('[build] GUI asset embedding failed')
+    process.exit(embedProc.exitCode ?? 1)
+  }
+} else {
+  console.log('[build] Skipping GUI build (--skip-gui)')
 }
 
 const proc = Bun.spawnSync({
