@@ -313,8 +313,11 @@ export class GuiBridge {
       this.currentMessages.push(assistantMsg)
       const activeSession = this.sessions.find((s) => s.status === 'active')
       if (activeSession) {
-        activeSession.name = this.lastUserInput.slice(0, 40) || 'New Thread'
-        activeSession.updatedAt = Date.now()
+        const nameFromInput = this.deriveSessionName(this.lastUserInput)
+        if (nameFromInput) {
+          activeSession.name = nameFromInput
+          activeSession.updatedAt = Date.now()
+        }
       }
       this.broadcastMetadata()
       this.broadcastSessionList()
@@ -787,5 +790,14 @@ export class GuiBridge {
 
   private broadcast(msg: unknown) {
     this.guiServer.broadcast(msg)
+  }
+
+  private deriveSessionName(input: string): string | null {
+    const trimmed = input.trim()
+    if (!trimmed) return null
+    const SLASH_COMMANDS = ['/model', '/new', '/switch', '/clear', '/compact', '/cost', '/help', '/theme', '/retry', '/undo']
+    if (SLASH_COMMANDS.some((cmd) => trimmed.startsWith(cmd + ' ') || trimmed === cmd)) return null
+    const firstLine = trimmed.split('\n')[0]
+    return firstLine.length > 50 ? firstLine.slice(0, 47) + '...' : firstLine
   }
 }
