@@ -83,28 +83,33 @@ export default function Composer() {
   const hasValue = value.trim().length > 0
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+  const MAX_ATTACHMENTS = 5
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    files.forEach((file) => {
-      if (file.size > MAX_FILE_SIZE) {
-        useToastStore.getState().addToast({
-          type: 'error',
-          message: `File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB > 10MB limit)`,
-          duration: 4000,
-        })
-        return
-      }
-      const reader = new FileReader()
-      reader.onload = () => {
-        setAttachments((prev) => [...prev, { name: file.name, dataUrl: reader.result as string }])
-      }
-      reader.onerror = () => {
-        useToastStore.getState().addToast({ type: 'error', message: `Failed to read file: ${file.name}`, duration: 3000 })
-      }
-      reader.readAsDataURL(file)
-    })
-    e.target.value = ''
+  const processFile = (file: File) => {
+    if (attachments.length >= MAX_ATTACHMENTS) {
+      useToastStore.getState().addToast({
+        type: 'warning',
+        message: `Maximum ${MAX_ATTACHMENTS} attachments allowed`,
+        duration: 3000,
+      })
+      return
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      useToastStore.getState().addToast({
+        type: 'error',
+        message: `File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB > 10MB limit)`,
+        duration: 4000,
+      })
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setAttachments((prev) => prev.length < MAX_ATTACHMENTS ? [...prev, { name: file.name, dataUrl: reader.result as string }] : prev)
+    }
+    reader.onerror = () => {
+      useToastStore.getState().addToast({ type: 'error', message: `Failed to read file: ${file.name}`, duration: 3000 })
+    }
+    reader.readAsDataURL(file)
   }
 
   return (
@@ -147,7 +152,10 @@ export default function Composer() {
             ref={fileInputRef}
             type="file"
             className="hidden"
-            onChange={handleFileSelect}
+            onChange={(e) => {
+              Array.from(e.target.files || []).forEach(processFile)
+              e.target.value = ''
+            }}
           />
 
           {/* ── Textarea ── */}
@@ -169,24 +177,7 @@ export default function Composer() {
               }
               if (files.length === 0) return
               e.preventDefault()
-              files.forEach((file) => {
-                if (file.size > MAX_FILE_SIZE) {
-                  useToastStore.getState().addToast({
-                    type: 'error',
-                    message: `File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB > 10MB limit)`,
-                    duration: 4000,
-                  })
-                  return
-                }
-                const reader = new FileReader()
-                reader.onload = () => {
-                  setAttachments((prev) => [...prev, { name: file.name, dataUrl: reader.result as string }])
-                }
-                reader.onerror = () => {
-                  useToastStore.getState().addToast({ type: 'error', message: `Failed to read file: ${file.name}`, duration: 3000 })
-                }
-                reader.readAsDataURL(file)
-              })
+              files.forEach(processFile)
             }}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}

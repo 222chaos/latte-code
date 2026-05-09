@@ -185,7 +185,10 @@ export default function Sidebar({ onClose }: Props) {
                     </Tooltip>
                     <Tooltip content="Delete" side="bottom" delay={300}>
                       <button
-                        onClick={(e) => { e.stopPropagation(); deleteSession(s.id) }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (window.confirm(`Delete "${s.name}"?`)) deleteSession(s.id)
+                        }}
                         className="flex items-center justify-center h-6 w-6 rounded-md transition-colors"
                         style={{ color: 'var(--text-quaternary)' }}
                         onMouseEnter={(e) => {

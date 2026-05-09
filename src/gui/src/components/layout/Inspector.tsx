@@ -38,6 +38,7 @@ export default function Inspector() {
       {/* ── Panel ── */}
       <div
         className="absolute right-0 top-0 bottom-0 z-50 w-full md:w-[340px] flex flex-col animate-spring-in-right"
+        onClick={(e) => e.stopPropagation()}
         style={{
           background: 'var(--glass-bg-strong)',
           backdropFilter: 'var(--glass-backdrop-strong)',

@@ -168,6 +168,7 @@ export class GuiBridge {
       const modelId = trimmed.slice('/model'.length).trim() || undefined
       this.context.options.mainLoopModel = modelId
       this.broadcastMetadata()
+      this.broadcastModels()
       logForDebugging(`[GuiBridge] Model switched to: ${modelId || 'default'}`)
       return
     }
@@ -335,7 +336,14 @@ export class GuiBridge {
     targetSession.updatedAt = Date.now()
     this.alwaysAllowedTools.clear()
     this.pendingPermissionTools.clear()
+    this.engine = null
+    this.isRunning = false
+    this.globalMessageCounter = 0
+    this.sessionCost = 0
+    this.toolUseNameMap.clear()
+    this.sources.clear()
     const snapshot = this.sessionMessageSnapshots.get(targetSessionId) ?? []
+    this.currentMessages = [...snapshot]
 
     this.broadcast({
       type: 'gui_state_sync',
