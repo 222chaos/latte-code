@@ -95,8 +95,10 @@ export default function AssistantMessage({ content, thinking, streaming }: Props
   }, []) // Empty deps: register once, event delegation handles dynamic elements
 
   // Code enhancement: syntax highlighting, headers, copy buttons, collapsible blocks
+  // Skip during streaming to avoid DOM thrashing and visual flickering
   useEffect(() => {
     if (!contentRef.current) return
+    if (streaming) return
     if (processedRef.current === html) return
     processedRef.current = html
 
@@ -217,7 +219,7 @@ export default function AssistantMessage({ content, thinking, streaming }: Props
         pre.appendChild(expandBtn)
       }
     })
-  }, [html])
+  }, [html, streaming])
 
   return (
     <div className="flex flex-col gap-2.5">

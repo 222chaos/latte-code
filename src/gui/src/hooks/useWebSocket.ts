@@ -78,8 +78,8 @@ function handleServerMessage(msg: ServerMessage) {
       if (p.done === true) {
         store.setGenerating(false)
         clearGenerationTimeout()
-      } else if (p.done === false) {
-        store.setGenerating(true)
+      } else {
+        if (!store.isGenerating) store.setGenerating(true)
         startGenerationTimeout()
       }
       const existing = store.messages.find((m) => m.id === p.messageId)

@@ -55,13 +55,10 @@ interface MessageRowProps {
 }
 
 const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, isGenerating, totalCount, toolCalls }: MessageRowProps) {
-  // Note: toolCalls is a prop (not a store subscription) so memo can compare it.
-  // A custom comparator below skips toolCalls comparison for messages without tool uses.
   const isUser = msg.role === 'user'
   const time = formatTime(msg.timestamp)
   const showDivider = idx === 0 || (prevTimestamp !== undefined && !isSameDay(msg.timestamp, prevTimestamp))
-  const shouldAnimate = idx >= totalCount - 8
-  const animDelay = shouldAnimate ? `${Math.min((idx - (totalCount - 8)) * 30, 300)}ms` : undefined
+  const isStreamTarget = isLast && isGenerating && !isUser
 
   return (
     <div style={{ contentVisibility: 'auto', containIntrinsicSize: '0 80px' }}>
@@ -81,10 +78,7 @@ const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, i
 
       {isUser ? (
         /* ── User Message ── */
-        <div
-          className={`flex justify-end group ${shouldAnimate ? 'animate-fade-in-up' : ''}`}
-          style={animDelay ? { animationDelay: animDelay } : undefined}
-        >
+        <div className="flex justify-end group animate-fade-in">
           <div className="max-w-[88%] sm:max-w-[82%] flex flex-col items-end gap-1">
             <div
               className="rounded-[20px] md:rounded-[22px] rounded-tr-sm px-4 md:px-5 py-2.5 md:py-3.5 text-[14px] md:text-[15px] leading-relaxed break-words"
@@ -121,10 +115,7 @@ const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, i
         </div>
       ) : (
         /* ── AI Message ── */
-        <div
-          className={`flex gap-3 md:gap-3.5 group ${shouldAnimate ? 'animate-fade-in-up' : ''}`}
-          style={animDelay ? { animationDelay: animDelay } : undefined}
-        >
+        <div className="flex gap-3 md:gap-3.5 group animate-fade-in">
           {/* Avatar */}
           <div
             className="flex h-7 w-7 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-[8px] md:rounded-[10px] mt-0.5"
@@ -163,7 +154,7 @@ const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, i
               <AssistantMessage
                 content={msg.content}
                 thinking={msg.thinking}
-                streaming={isLast && isGenerating}
+                streaming={isStreamTarget}
               />
             </div>
 
@@ -330,9 +321,11 @@ export default function MainContent() {
 
           <PermissionCard />
 
-          {isGenerating && (
-            <TypingIndicator />
-          )}
+          {isGenerating && (() => {
+            const last = messages[messages.length - 1]
+            const showTyping = !last || last.role !== 'assistant' || !last.content
+            return showTyping ? <TypingIndicator /> : null
+          })()}
         </div>
       </div>
       <ScrollButton containerRef={scrollRef} />
