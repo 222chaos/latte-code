@@ -75,7 +75,6 @@ function handleServerMessage(msg: ServerMessage) {
 
     case 'gui_message_stream': {
       const p = msg.payload
-      const existing = store.messages.find((m) => m.id === p.messageId)
       if (p.done === true) {
         store.setGenerating(false)
         clearGenerationTimeout()
@@ -83,16 +82,11 @@ function handleServerMessage(msg: ServerMessage) {
         store.setGenerating(true)
         startGenerationTimeout()
       }
-      // done === undefined: intermediate update, don't touch isGenerating
+      const existing = store.messages.find((m) => m.id === p.messageId)
       if (existing) {
-        const isStreaming = p.done === false
         store.updateMessage(p.messageId, {
-          content: isStreaming
-            ? (existing.content + (p.content || ''))
-            : (p.content ?? existing.content),
-          thinking: p.thinking !== undefined
-            ? (isStreaming ? (existing.thinking || '') + p.thinking : p.thinking)
-            : existing.thinking,
+          content: p.content ?? existing.content,
+          thinking: p.thinking !== undefined ? p.thinking : existing.thinking,
           toolUses: p.toolUses ?? existing.toolUses,
           toolResults: p.toolResults ?? existing.toolResults,
         })

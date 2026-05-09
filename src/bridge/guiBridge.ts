@@ -197,8 +197,23 @@ export class GuiBridge {
     let currentThinking = ''
     const currentToolUses: { id: string; name: string; input: Record<string, unknown> }[] = []
     const currentToolResults: { toolUseId: string; content: string; isError?: boolean }[] = []
-    let receivedTextDelta = false
     let hasBroadcastFinal = false
+
+    const broadcastStream = (done: boolean | undefined) => {
+      this.broadcast({
+        type: 'gui_message_stream',
+        payload: {
+          messageId: assistantMessageId,
+          role: 'assistant',
+          content: currentContent,
+          thinking: currentThinking || undefined,
+          toolUses: currentToolUses.length > 0 ? [...currentToolUses] : undefined,
+          toolResults: currentToolResults.length > 0 ? [...currentToolResults] : undefined,
+          done,
+          timestamp: Date.now(),
+        },
+      } as GuiMessageStream)
+    }
 
     try {
       const prompt: string | ContentBlockParam[] = attachments && attachments.length > 0
@@ -224,47 +239,24 @@ export class GuiBridge {
       const generator = this.engine.submitMessage(prompt)
 
       for await (const msg of generator) {
-        this.handleSDKMessage(msg as SDKMessage, assistantMessageId, (deltaContent, deltaThinking, done) => {
-          let broadcastContent: string | undefined
-          let broadcastThinking: string | undefined
-          if (done === false) {
-            if (deltaContent !== undefined) {
-              currentContent += deltaContent
-              receivedTextDelta = true
-              broadcastContent = deltaContent
+        this.handleSDKMessage(msg as SDKMessage, assistantMessageId,
+          (deltaContent?: string, deltaThinking?: string, done?: boolean) => {
+            if (deltaContent !== undefined) currentContent += deltaContent
+            if (deltaThinking !== undefined) currentThinking += deltaThinking
+            if (done === true) hasBroadcastFinal = true
+            broadcastStream(done)
+          },
+          (toolUse) => {
+            if (!currentToolUses.some(u => u.id === toolUse.id)) {
+              currentToolUses.push(toolUse)
             }
-            if (deltaThinking !== undefined) {
-              currentThinking += deltaThinking
-              broadcastThinking = deltaThinking
-            }
-          } else {
-            if (deltaContent !== undefined) currentContent = deltaContent
-            if (deltaThinking !== undefined) currentThinking = deltaThinking
-            broadcastContent = currentContent
-            broadcastThinking = currentThinking || undefined
-          }
-          if (done === true) hasBroadcastFinal = true
-          this.broadcast({
-            type: 'gui_message_stream',
-            payload: {
-              messageId: assistantMessageId,
-              role: 'assistant',
-              content: broadcastContent ?? '',
-              thinking: broadcastThinking,
-              toolUses: currentToolUses.length > 0 ? [...currentToolUses] : undefined,
-              toolResults: currentToolResults.length > 0 ? [...currentToolResults] : undefined,
-              done,
-              timestamp: Date.now(),
-            },
-          } as GuiMessageStream)
-        }, (toolUse) => {
-          if (!currentToolUses.some(u => u.id === toolUse.id)) {
-            currentToolUses.push(toolUse)
-          }
-          this.toolUseNameMap.set(toolUse.id, toolUse.name)
-        }, (toolResult) => {
-          currentToolResults.push(toolResult)
-        }, receivedTextDelta)
+            this.toolUseNameMap.set(toolUse.id, toolUse.name)
+            broadcastStream(undefined)
+          },
+          (toolResult) => {
+            currentToolResults.push(toolResult)
+          },
+        )
       }
 
     } catch (err) {
@@ -285,19 +277,7 @@ export class GuiBridge {
       // even when the generator throws, is aborted, or completes without
       // ever sending a final assistant message.
       if (!hasBroadcastFinal) {
-        this.broadcast({
-          type: 'gui_message_stream',
-          payload: {
-            messageId: assistantMessageId,
-            role: 'assistant',
-            content: currentContent,
-            thinking: currentThinking || undefined,
-            toolUses: currentToolUses.length > 0 ? currentToolUses : undefined,
-            toolResults: currentToolResults.length > 0 ? currentToolResults : undefined,
-            done: true,
-            timestamp: Date.now(),
-          },
-        } as GuiMessageStream)
+        broadcastStream(true)
       }
 
       // Save final assistant message to history
@@ -541,19 +521,17 @@ export class GuiBridge {
     onUpdate: (content?: string, thinking?: string, done?: boolean) => void,
     onToolUse?: (toolUse: { id: string; name: string; input: Record<string, unknown> }) => void,
     onToolResult?: (toolResult: { toolUseId: string; content: string; isError?: boolean }) => void,
-    receivedTextDelta?: boolean,
   ) {
     switch (msg.type) {
       case 'assistant': {
         const content = msg.message?.content
         if (Array.isArray(content)) {
-          let hasText = false
           let text = ''
           let thinking = ''
           for (const block of content) {
             if (typeof block !== 'object' || !block) continue
-            if (block.type === 'text') { text += block.text || ''; hasText = true }
-            if (block.type === 'thinking') { thinking += block.thinking || ''; hasText = true }
+            if (block.type === 'text') { text += block.text || '' }
+            if (block.type === 'thinking') { thinking += block.thinking || '' }
             if (block.type === 'tool_use') {
               onToolUse?.({ id: block.id || '', name: block.name || 'unknown', input: block.input || {} })
               this.broadcast({
@@ -605,8 +583,8 @@ export class GuiBridge {
               }
             }
           }
-          if (hasText && !receivedTextDelta && (text || thinking)) {
-            onUpdate(text || undefined, thinking || undefined, true)
+          if (text || thinking) {
+            onUpdate(text || undefined, thinking || undefined, undefined)
           }
         }
         break

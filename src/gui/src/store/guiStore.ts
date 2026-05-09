@@ -195,12 +195,13 @@ function togglePlanItemRecursive(item: PlanItem, id: string): PlanItem {
   return item
 }
 
-function stableStringify(obj: unknown): string {
+function stableStringify(obj: unknown, depth = 0): string {
+  if (depth > 10) return '"[deep]"'
   if (obj === null || typeof obj !== 'object') return JSON.stringify(obj)
-  if (Array.isArray(obj)) return `[${obj.map(stableStringify).join(',')}]`
+  if (Array.isArray(obj)) return `[${obj.map((v) => stableStringify(v, depth + 1)).join(',')}]`
   const sorted = Object.keys(obj as Record<string, unknown>)
     .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableStringify((obj as Record<string, unknown>)[key])}`)
+    .map((key) => `${JSON.stringify(key)}:${stableStringify((obj as Record<string, unknown>)[key], depth + 1)}`)
     .join(',')
   return `{${sorted}}`
 }

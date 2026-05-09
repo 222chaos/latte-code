@@ -202,18 +202,16 @@ const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, i
     </div>
   )
 }, (prev, next) => {
-  // Custom comparator: skip toolCalls comparison for messages without tool uses
-  if (prev.msg.id !== next.msg.id ||
-      prev.idx !== next.idx ||
-      prev.isLast !== next.isLast ||
-      prev.isGenerating !== next.isGenerating ||
-      prev.totalCount !== next.totalCount ||
-      prev.prevTimestamp !== next.prevTimestamp ||
-      prev.msg.content !== next.msg.content ||
-      prev.msg.thinking !== next.msg.thinking ||
-      prev.msg.toolUses !== next.msg.toolUses ||
-      prev.msg.toolResults !== next.msg.toolResults) return false
-  // Only compare toolCalls if this message has tool uses
+  if (prev.msg.id !== next.msg.id) return false
+  if (prev.idx !== next.idx) return false
+  if (prev.isLast !== next.isLast) return false
+  if (prev.isGenerating !== next.isGenerating) return false
+  if (prev.totalCount !== next.totalCount) return false
+  if (prev.prevTimestamp !== next.prevTimestamp) return false
+  if (prev.msg.content !== next.msg.content) return false
+  if (prev.msg.thinking !== next.msg.thinking) return false
+  if (prev.msg.toolUses !== next.msg.toolUses) return false
+  if (prev.msg.toolResults !== next.msg.toolResults) return false
   if (next.msg.toolUses && next.msg.toolUses.length > 0 && prev.toolCalls !== next.toolCalls) return false
   return true
 })
@@ -332,7 +330,7 @@ export default function MainContent() {
 
           <PermissionCard />
 
-          {isGenerating && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && (
+          {isGenerating && (
             <TypingIndicator />
           )}
         </div>
