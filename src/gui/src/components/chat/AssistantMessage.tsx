@@ -98,7 +98,10 @@ export default function AssistantMessage({ content, thinking, streaming }: Props
   // Skip during streaming to avoid DOM thrashing and visual flickering
   useEffect(() => {
     if (!contentRef.current) return
-    if (streaming) return
+    if (streaming) {
+      processedRef.current = ''
+      return
+    }
     if (processedRef.current === html) return
     processedRef.current = html
 

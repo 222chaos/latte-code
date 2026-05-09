@@ -50,11 +50,10 @@ interface MessageRowProps {
   prevTimestamp?: number
   isLast: boolean
   isGenerating: boolean
-  totalCount: number
   toolCalls: GuiToolCall['payload'][]
 }
 
-const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, isGenerating, totalCount, toolCalls }: MessageRowProps) {
+const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, isGenerating, toolCalls }: MessageRowProps) {
   const isUser = msg.role === 'user'
   const time = formatTime(msg.timestamp)
   const showDivider = idx === 0 || (prevTimestamp !== undefined && !isSameDay(msg.timestamp, prevTimestamp))
@@ -197,7 +196,6 @@ const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, i
   if (prev.idx !== next.idx) return false
   if (prev.isLast !== next.isLast) return false
   if (prev.isGenerating !== next.isGenerating) return false
-  if (prev.totalCount !== next.totalCount) return false
   if (prev.prevTimestamp !== next.prevTimestamp) return false
   if (prev.msg.content !== next.msg.content) return false
   if (prev.msg.thinking !== next.msg.thinking) return false
@@ -314,7 +312,6 @@ export default function MainContent() {
               prevTimestamp={messages[idx - 1]?.timestamp}
               isLast={idx === messages.length - 1}
               isGenerating={isGenerating}
-              totalCount={messages.length}
               toolCalls={toolCalls}
             />
           ))}

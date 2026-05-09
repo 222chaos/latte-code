@@ -68,6 +68,7 @@ interface GuiState {
   setSources: (sources: FileNode[]) => void
   setPlanItems: (planItems: PlanItem[]) => void
   clearTransient: () => void
+  clearToolCalls: () => void
   deleteSession: (id: string) => void
   renameSession: (id: string, name: string) => void
   togglePlanItem: (id: string) => void
@@ -165,6 +166,7 @@ export const useGuiStore = create<GuiState>((set) => ({
   setSources: (sources: FileNode[]) => set({ sources }),
   setPlanItems: (planItems: PlanItem[]) => set({ planItems }),
   clearTransient: () => set({ toolCalls: [], pendingPermissions: [], diffs: [], sources: [], planItems: [] }),
+  clearToolCalls: () => set({ toolCalls: [] }),
   setGenerating: (v: boolean) => set({ isGenerating: v }),
   deleteSession: (id: string) =>
     set((s) => ({ sessions: s.sessions.filter((sess) => sess.id !== id) })),

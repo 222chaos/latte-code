@@ -483,7 +483,13 @@ export class GuiBridge {
     } as GuiError)
     this.broadcast({
       type: 'gui_message_stream',
-      payload: { done: true },
+      payload: {
+        messageId: `assistant-${this.globalMessageCounter}`,
+        role: 'assistant',
+        content: '',
+        done: true,
+        timestamp: Date.now(),
+      },
     } as GuiMessageStream)
   }
 

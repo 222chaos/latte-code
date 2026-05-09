@@ -74,6 +74,7 @@ function handleServerMessage(msg: ServerMessage) {
       const p = msg.payload
       if (p.done === true) {
         store.setGenerating(false)
+        store.clearToolCalls()
         clearGenerationTimeout()
       } else {
         if (!store.isGenerating) store.setGenerating(true)
