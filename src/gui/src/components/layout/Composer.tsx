@@ -29,7 +29,6 @@ export default function Composer() {
   const lastSubmitTime = useRef(0)
   const { send } = useWebSocket()
   const model = useGuiStore((s) => s.model)
-  const setModel = useGuiStore((s) => s.setSessionInfo)
   const isGenerating = useGuiStore((s) => s.isGenerating)
   const isHistoryView = useGuiStore((s) => s.isHistoryView)
   const availableModels = useGuiStore((s) => s.availableModels)
@@ -237,7 +236,6 @@ export default function Composer() {
                         key={m.id}
                         onClick={() => {
                           const modelId = m.id === 'default' ? '' : m.id
-                          setModel({ model: modelId })
                           setModelOpen(false)
                           send({ type: 'user_input', payload: { content: `/model ${modelId || 'default'}` } })
                           useToastStore.getState().addToast({

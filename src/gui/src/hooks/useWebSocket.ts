@@ -66,10 +66,7 @@ function handleServerMessage(msg: ServerMessage) {
         isHistoryView: p.isHistoryView,
       })
       store.setMessages(p.messages)
-      // Only clear transient state when explicitly starting a new session (/new)
-      if (p.messages.length === 0) {
-        store.clearTransient()
-      }
+      store.clearTransient()
       break
     }
 

@@ -14,7 +14,7 @@ export default function PermissionCard() {
   }
 
   return (
-    <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 w-full max-w-xl px-4">
+    <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-50 w-full max-w-xl px-4">
       <div className="flex flex-col gap-2.5 max-h-[60vh] overflow-y-auto no-scrollbar">
         {permissions.map((p, idx) => (
           <div

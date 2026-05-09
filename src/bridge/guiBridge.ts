@@ -302,9 +302,6 @@ export class GuiBridge {
       }
       this.broadcastMetadata()
       this.broadcastSessionList()
-      if (this.lastUserInput.trim().startsWith('/model')) {
-        this.broadcastModels()
-      }
     }
   }
 
@@ -484,6 +481,10 @@ export class GuiBridge {
       type: 'gui_error',
       payload: { message: 'Query interrupted by user' },
     } as GuiError)
+    this.broadcast({
+      type: 'gui_message_stream',
+      payload: { done: true },
+    } as GuiMessageStream)
   }
 
   private wrapCanUseTool() {
