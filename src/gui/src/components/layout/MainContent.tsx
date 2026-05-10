@@ -185,8 +185,11 @@ const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, i
               </div>
             )}
 
-            {/* Tool Results */}
-            {msg.toolResults?.map((tr) => (
+            {/* Tool Results (non-file tools only; file results shown in DiffPanel) */}
+            {msg.toolResults?.filter((tr) => {
+              const matchingToolName = msg.toolUses?.find((tu) => tu.id === tr.toolUseId)?.name
+              return !matchingToolName || !FILE_TOOLS.has(matchingToolName)
+            }).map((tr) => (
               <ToolResultBlock key={tr.toolUseId} toolResult={tr} />
             ))}
           </div>
@@ -217,18 +220,8 @@ export default function MainContent() {
   const userScrolledUp = useRef(false)
   const pendingRaf = useRef(0)
 
-  const fileToolCalls = toolCalls.filter(
-    (tc) => FILE_TOOLS.has(tc.toolName) && tc.status !== 'running'
-  )
-  const diffFilePaths = new Set(diffs.map((d) => d.filePath))
-  const uniqueFileToolCalls = fileToolCalls.filter(
-    (tc) => {
-      const fp = (tc.input?.file_path || tc.input?.path || '') as string
-      return !diffFilePaths.has(fp)
-    }
-  )
-  const showDiffPanel = diffs.length > 0 || uniqueFileToolCalls.length > 0
-  const diffPanelCount = diffs.length + uniqueFileToolCalls.length
+  const showDiffPanel = diffs.length > 0
+  const diffPanelCount = diffs.length
   const [diffPanelVisible, setDiffPanelVisible] = useState(true)
 
   useEffect(() => {
@@ -392,16 +385,6 @@ export default function MainContent() {
                 oldContent={d.oldContent ?? ''}
                 newContent={d.newContent ?? ''}
                 toolName={d.toolName}
-              />
-            ))}
-            {uniqueFileToolCalls.map((tc) => (
-              <ToolCallCard
-                key={tc.toolUseId || tc.toolName}
-                toolName={tc.toolName}
-                input={tc.input}
-                status={tc.status as 'running' | 'success' | 'error'}
-                output={tc.output}
-                durationMs={tc.durationMs}
               />
             ))}
           </div>
