@@ -1,4 +1,4 @@
-import { memo, useRef, useEffect, useCallback } from 'react'
+import { memo, useRef, useEffect, useCallback, useState } from 'react'
 import { useGuiStore } from '../../store/guiStore.ts'
 import { sendWsMessage } from '../../hooks/useWebSocket.ts'
 import { Bot, Sparkles, Zap, Code, FileCode, Bug, X } from 'lucide-react'
@@ -220,7 +220,16 @@ export default function MainContent() {
   const fileToolCalls = toolCalls.filter(
     (tc) => FILE_TOOLS.has(tc.toolName) && tc.status !== 'running'
   )
-  const showDiffPanel = fileToolCalls.length > 0 || diffs.length > 0
+  const diffFilePaths = new Set(diffs.map((d) => d.filePath))
+  const uniqueFileToolCalls = fileToolCalls.filter(
+    (tc) => {
+      const fp = (tc.input?.file_path || tc.input?.path || '') as string
+      return !diffFilePaths.has(fp)
+    }
+  )
+  const showDiffPanel = diffs.length > 0 || uniqueFileToolCalls.length > 0
+  const diffPanelCount = diffs.length + uniqueFileToolCalls.length
+  const [diffPanelVisible, setDiffPanelVisible] = useState(true)
 
   useEffect(() => {
     const el = scrollRef.current
@@ -340,9 +349,9 @@ export default function MainContent() {
       </div>
 
       {/* ── Right: Diff Panel ── */}
-      {showDiffPanel && (
+      {showDiffPanel && diffPanelVisible && (
         <div
-          className="w-[380px] md:w-[420px] shrink-0 border-l overflow-y-auto"
+          className="w-[320px] md:w-[380px] lg:w-[420px] shrink-0 border-l overflow-y-auto"
           style={{
             background: 'var(--bg-secondary)',
             borderColor: 'var(--border-color)',
@@ -355,14 +364,25 @@ export default function MainContent() {
               borderBottom: '1px solid var(--border-color)',
             }}
           >
-            <span className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-              File Changes
-            </span>
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
-              style={{ background: 'var(--card-bg)', color: 'var(--text-tertiary)', border: '1px solid var(--card-border)' }}
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                File Changes
+              </span>
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                style={{ background: 'var(--card-bg)', color: 'var(--text-tertiary)', border: '1px solid var(--card-border)' }}
+              >
+                {diffPanelCount}
+              </span>
+            </div>
+            <button
+              onClick={() => setDiffPanelVisible(false)}
+              className="flex items-center justify-center h-6 w-6 rounded-md transition-colors"
+              style={{ color: 'var(--text-quaternary)' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
-              {diffs.length + fileToolCalls.length}
-            </span>
+              <X size={14} strokeWidth={1.5} />
+            </button>
           </div>
           <div className="p-3 space-y-3">
             {diffs.map((d, i) => (
@@ -374,7 +394,7 @@ export default function MainContent() {
                 toolName={d.toolName}
               />
             ))}
-            {fileToolCalls.map((tc) => (
+            {uniqueFileToolCalls.map((tc) => (
               <ToolCallCard
                 key={tc.toolUseId || tc.toolName}
                 toolName={tc.toolName}
@@ -386,6 +406,32 @@ export default function MainContent() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* ── DiffPanel reopen button ── */}
+      {showDiffPanel && !diffPanelVisible && (
+        <button
+          onClick={() => setDiffPanelVisible(true)}
+          className="absolute right-3 top-3 z-20 flex items-center gap-1.5 h-8 px-2.5 rounded-xl transition-all"
+          style={{
+            background: 'var(--glass-bg-strong)',
+            backdropFilter: 'var(--glass-backdrop)',
+            color: 'var(--text-secondary)',
+            border: '1px solid var(--glass-border)',
+            boxShadow: 'var(--shadow-sm)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'var(--card-bg-hover)'
+            e.currentTarget.style.borderColor = 'var(--card-border-hover)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'var(--glass-bg-strong)'
+            e.currentTarget.style.borderColor = 'var(--glass-border)'
+          }}
+        >
+          <FileCode size={13} strokeWidth={1.5} />
+          <span className="text-[11px] font-medium">{diffPanelCount}</span>
+        </button>
       )}
     </div>
   )
