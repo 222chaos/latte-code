@@ -452,7 +452,6 @@ export class GuiBridge {
   }
 
   handleClientDisconnect() {
-    // All clients gone — reject pending permissions so generators can terminate
     for (const deferred of this.pendingPermissions.values()) {
       deferred.resolve({ behavior: 'deny', message: 'Client disconnected' })
     }
@@ -463,6 +462,16 @@ export class GuiBridge {
     if (this.isRunning) {
       this.engine?.interrupt()
       this.isRunning = false
+      this.broadcast({
+        type: 'gui_message_stream',
+        payload: {
+          messageId: `assistant-${this.globalMessageCounter}`,
+          role: 'assistant',
+          content: '',
+          done: true,
+          timestamp: Date.now(),
+        },
+      } as GuiMessageStream)
     }
     logForDebugging('[GuiBridge] All clients disconnected, cleaned up pending state')
   }

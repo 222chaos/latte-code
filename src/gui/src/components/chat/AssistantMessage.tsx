@@ -224,6 +224,14 @@ export default function AssistantMessage({ content, thinking, streaming }: Props
     })
   }, [html, streaming])
 
+  // During streaming, bypass React's VDOM reconciliation by directly
+  // setting innerHTML. This prevents full DOM rebuilds on every token.
+  useEffect(() => {
+    if (streaming && contentRef.current) {
+      contentRef.current.innerHTML = html
+    }
+  }, [html, streaming])
+
   return (
     <div className="flex flex-col gap-2.5">
       {/* ── Thinking Toggle ── */}
@@ -277,7 +285,7 @@ export default function AssistantMessage({ content, thinking, streaming }: Props
       <div
         ref={contentRef}
         className={`prose prose-invert prose-sm max-w-none ${streaming && html ? 'streaming-cursor' : ''}`}
-        dangerouslySetInnerHTML={{ __html: html }}
+        {...(!streaming ? { dangerouslySetInnerHTML: { __html: html } } : {})}
       />
     </div>
   )
