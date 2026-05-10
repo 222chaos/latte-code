@@ -191,7 +191,13 @@ export class GuiBridge {
     this.currentMessages.push(userMsg)
     this.broadcast({
       type: 'gui_message_stream',
-      payload: { ...userMsg, done: true },
+      payload: {
+        messageId: userMessageId,
+        role: 'user',
+        content,
+        done: true,
+        timestamp: userMsg.timestamp,
+      },
     } as GuiMessageStream)
 
     let currentContent = ''
