@@ -8,6 +8,7 @@ interface Props {
   oldContent: string
   newContent: string
   diff?: string
+  toolName?: string
   onAccept?: () => void
   onReject?: () => void
 }
@@ -18,7 +19,7 @@ interface DiffLine {
   removed?: boolean
 }
 
-export default function DiffViewer({ filePath, oldContent, newContent, diff, onAccept, onReject }: Props) {
+export default function DiffViewer({ filePath, oldContent, newContent, diff, toolName, onAccept, onReject }: Props) {
   const [expanded, setExpanded] = useState(true)
 
   const lines = useMemo<DiffLine[]>(() => {
@@ -64,6 +65,14 @@ export default function DiffViewer({ filePath, oldContent, newContent, diff, onA
         >
           {filePath}
         </span>
+        {toolName && (
+          <span
+            className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+            style={{ background: 'rgba(0,0,0,0.2)', color: 'var(--text-quaternary)' }}
+          >
+            {toolName}
+          </span>
+        )}
         <div className="flex items-center gap-0.5">
           {onAccept && (
             <Tooltip content="Accept changes" side="bottom" delay={300}>

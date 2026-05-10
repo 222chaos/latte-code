@@ -1,7 +1,7 @@
 import { memo, useRef, useEffect, useCallback } from 'react'
 import { useGuiStore } from '../../store/guiStore.ts'
 import { sendWsMessage } from '../../hooks/useWebSocket.ts'
-import { Bot, Sparkles, Zap, Code, FileCode, Bug } from 'lucide-react'
+import { Bot, Sparkles, Zap, Code, FileCode, Bug, X } from 'lucide-react'
 import AssistantMessage from '../chat/AssistantMessage.tsx'
 import ToolCallCard from '../chat/ToolCallCard.tsx'
 import ToolResultBlock from '../chat/ToolResultBlock.tsx'
@@ -9,6 +9,7 @@ import TypingIndicator from '../chat/TypingIndicator.tsx'
 import ScrollButton from './ScrollButton.tsx'
 import PermissionCard from '../permissions/PermissionCard.tsx'
 import MessageActions from '../chat/MessageActions.tsx'
+import DiffViewer from '../diff/DiffViewer.tsx'
 import type { GuiMessageItem, GuiToolCall } from '../../shared/protocol.ts'
 
 function formatTime(ts: number) {
@@ -52,6 +53,8 @@ interface MessageRowProps {
   isGenerating: boolean
   toolCalls: GuiToolCall['payload'][]
 }
+
+const FILE_TOOLS = new Set(['FileEditTool', 'Edit', 'FileWriteTool', 'Write', 'FileReadTool', 'Read'])
 
 const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, isGenerating, toolCalls }: MessageRowProps) {
   const isUser = msg.role === 'user'
@@ -157,10 +160,10 @@ const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, i
               />
             </div>
 
-            {/* Tool Calls */}
+            {/* Tool Calls (non-file tools only; file tools shown in DiffPanel) */}
             {msg.toolUses && msg.toolUses.length > 0 && (
               <div className="mt-3 md:mt-4 space-y-2 md:space-y-2.5">
-                {msg.toolUses.map((tu) => {
+                {msg.toolUses.filter((tu) => !FILE_TOOLS.has(tu.name)).map((tu) => {
                   const call = toolCalls.find(
                     (tc) => tc.toolUseId === tu.id || (tc.toolName === tu.name && tc.status === 'running')
                   )
@@ -209,9 +212,15 @@ export default function MainContent() {
   const messages = useGuiStore((s) => s.messages)
   const isGenerating = useGuiStore((s) => s.isGenerating)
   const toolCalls = useGuiStore((s) => s.toolCalls)
+  const diffs = useGuiStore((s) => s.diffs)
   const scrollRef = useRef<HTMLDivElement>(null)
   const userScrolledUp = useRef(false)
   const pendingRaf = useRef(0)
+
+  const fileToolCalls = toolCalls.filter(
+    (tc) => FILE_TOOLS.has(tc.toolName) && tc.status !== 'running'
+  )
+  const showDiffPanel = fileToolCalls.length > 0 || diffs.length > 0
 
   useEffect(() => {
     const el = scrollRef.current
@@ -241,13 +250,15 @@ export default function MainContent() {
   }, [])
 
   return (
-    <div className="flex-1 overflow-hidden relative">
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="absolute inset-0 overflow-y-auto"
-        style={{ background: 'var(--content-bg)' }}
-      >
+    <div className="flex-1 overflow-hidden relative flex">
+      {/* ── Left: Message Stream ── */}
+      <div className="flex-1 min-w-0 relative">
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="absolute inset-0 overflow-y-auto"
+          style={{ background: 'var(--content-bg)' }}
+        >
         {/* ── Empty State ── */}
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center min-h-full gap-5 md:gap-6 px-4 md:px-6 py-10 md:py-12">
@@ -324,8 +335,58 @@ export default function MainContent() {
             return showTyping ? <TypingIndicator /> : null
           })()}
         </div>
+        </div>
+        <ScrollButton containerRef={scrollRef} />
       </div>
-      <ScrollButton containerRef={scrollRef} />
+
+      {/* ── Right: Diff Panel ── */}
+      {showDiffPanel && (
+        <div
+          className="w-[380px] md:w-[420px] shrink-0 border-l overflow-y-auto"
+          style={{
+            background: 'var(--bg-secondary)',
+            borderColor: 'var(--border-color)',
+          }}
+        >
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5"
+            style={{
+              background: 'var(--glass-bg-strong)',
+              backdropFilter: 'var(--glass-backdrop)',
+              borderBottom: '1px solid var(--border-color)',
+            }}
+          >
+            <span className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+              File Changes
+            </span>
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+              style={{ background: 'var(--card-bg)', color: 'var(--text-tertiary)', border: '1px solid var(--card-border)' }}
+            >
+              {diffs.length + fileToolCalls.length}
+            </span>
+          </div>
+          <div className="p-3 space-y-3">
+            {diffs.map((d, i) => (
+              <DiffViewer
+                key={`${d.filePath}-${i}`}
+                filePath={d.filePath}
+                oldContent={d.oldContent ?? ''}
+                newContent={d.newContent ?? ''}
+                toolName={d.toolName}
+              />
+            ))}
+            {fileToolCalls.map((tc) => (
+              <ToolCallCard
+                key={tc.toolUseId || tc.toolName}
+                toolName={tc.toolName}
+                input={tc.input}
+                status={tc.status as 'running' | 'success' | 'error'}
+                output={tc.output}
+                durationMs={tc.durationMs}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
