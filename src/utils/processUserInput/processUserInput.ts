@@ -59,6 +59,9 @@ import {
   replaceUltraplanKeyword,
 } from '../ultraplan/keyword.js'
 import { processTextPrompt } from './processTextPrompt.js'
+import {
+  routeSkillIntent,
+} from '../skills/skillIntentRouter.js'
 export type ProcessUserInputContext = ToolUseContext & LocalJSXCommandContext
 
 export type ProcessUserInputBaseResult = {
@@ -490,6 +493,39 @@ async function processUserInputBase(
       canUseTool,
     )
     return addImageMetadataMessage(slashResult, imageMetadataTexts)
+  }
+
+  // Skill intent router — automatically map natural-language input to
+  // slash commands based on semantic keyword matching.  Runs entirely
+  // locally (no LLM side-query).  Only active in interactive prompt mode
+  // for non-slash, non-empty text input.
+  if (
+    feature('SKILL_INTENT_ROUTER') &&
+    mode === 'prompt' &&
+    !context.options.isNonInteractiveSession &&
+    inputString !== null &&
+    !effectiveSkipSlash &&
+    !inputString.startsWith('/')
+  ) {
+    const intent = routeSkillIntent(inputString)
+    if (intent.matched) {
+      logEvent('tengu_skill_intent_routed', {
+        score: Math.round(intent.score * 100),
+      })
+      const { processSlashCommand } = await import('./processSlashCommand.js')
+      const slashResult = await processSlashCommand(
+        intent.rewrittenInput,
+        precedingInputBlocks,
+        imageContentBlocks,
+        [],
+        context,
+        setToolJSX,
+        uuid,
+        isAlreadyProcessing,
+        canUseTool,
+      )
+      return addImageMetadataMessage(slashResult, imageMetadataTexts)
+    }
   }
 
   // For slash commands, attachments will be extracted within getMessagesForSlashCommand

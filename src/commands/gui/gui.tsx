@@ -91,7 +91,14 @@ function GuiCommand({ onDone, args, context }: GuiCommandProps) {
             onClientConnect: () => guiBridgeInstance?.handleClientConnect(),
             onClientDisconnect: () => guiBridgeInstance?.handleClientDisconnect(),
             onSessionSwitch: (sessionId) => guiBridgeInstance?.handleSessionSwitch(sessionId),
+            onSessionDelete: (sessionId) => guiBridgeInstance?.handleSessionDelete(sessionId),
+            onSessionRename: (sessionId, name) => guiBridgeInstance?.handleSessionRename(sessionId, name),
           })
+          // Race-condition safety: if a client already connected before
+          // callbacks were registered, manually trigger the sync now.
+          if (server.getClientCount() > 0) {
+            guiBridgeInstance?.handleClientConnect()
+          }
           logForDebugging('[GUI] Bridge initialized')
         } catch (err) {
           logForDebugging(`[GUI] Bridge init error: ${err}`)

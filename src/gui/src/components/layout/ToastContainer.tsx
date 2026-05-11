@@ -20,7 +20,7 @@ export default function ToastContainer() {
   const removeToast = useToastStore((s) => s.removeToast)
 
   return (
-    <div className="absolute top-4 right-4 z-40 flex flex-col gap-2.5 w-80 max-h-[40vh] overflow-y-auto">
+    <div className="absolute top-4 right-4 z-40 flex flex-col gap-2.5 w-80 max-h-[40vh] overflow-y-auto" aria-live="polite" aria-atomic="true">
       {toasts.map((toast, idx) => {
         const Icon = ICONS[toast.type]
         const color = COLORS[toast.type]
@@ -43,7 +43,8 @@ export default function ToastContainer() {
             </span>
             <button
               onClick={() => removeToast(toast.id)}
-              className="flex items-center justify-center h-5 w-5 rounded-md transition-colors shrink-0 mt-0.5"
+              aria-label="Dismiss notification"
+              className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors shrink-0"
               style={{ color: 'var(--text-quaternary)' }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = 'var(--bg-hover)'
@@ -54,7 +55,7 @@ export default function ToastContainer() {
                 e.currentTarget.style.color = 'var(--text-quaternary)'
               }}
             >
-              <X size={12} strokeWidth={2} />
+              <X size={14} strokeWidth={2} />
             </button>
           </div>
         )

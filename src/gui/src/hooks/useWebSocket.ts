@@ -105,9 +105,16 @@ function handleServerMessage(msg: ServerMessage) {
 
     case 'gui_tool_call': {
       const p = msg.payload
+      // Prefer exact toolUseId match; fall back to (toolName + input signature)
+      // to disambiguate multiple running tools of the same type.
       const existing = store.toolCalls.find((tc) => {
         if (p.toolUseId && tc.toolUseId === p.toolUseId) return true
-        return tc.toolName === p.toolName && tc.status === 'running'
+        if (!p.toolUseId) {
+          const inputMatch =
+            JSON.stringify(tc.input ?? {}) === JSON.stringify(p.input ?? {})
+          return tc.toolName === p.toolName && tc.status === 'running' && inputMatch
+        }
+        return false
       })
       if (existing) {
         store.updateToolCall(
@@ -146,6 +153,7 @@ function handleServerMessage(msg: ServerMessage) {
 
     case 'gui_error':
       store.setGenerating(false)
+      clearGenerationTimeout()
       useToastStore.getState().addToast({ type: 'error', message: msg.payload.message })
       break
 
@@ -155,6 +163,10 @@ function handleServerMessage(msg: ServerMessage) {
 
     case 'gui_models_sync':
       store.setAvailableModels(msg.payload.models)
+      break
+
+    case 'gui_commands_sync':
+      store.setCommands(msg.payload.commands)
       break
 
     case 'gui_sources_sync':

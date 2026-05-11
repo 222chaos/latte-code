@@ -35,6 +35,8 @@ export type GuiServerCallbacks = {
   onInterrupt?: () => void
   onDesignSystemRequest?: (brand: string, action: string, query?: string) => void
   onSessionSwitch?: (sessionId: string) => void
+  onSessionDelete?: (sessionId: string) => void
+  onSessionRename?: (sessionId: string, name: string) => void
   onClientConnect?: () => void
   onClientDisconnect?: () => void
 }
@@ -210,6 +212,15 @@ export class GuiServer {
         break
       case 'user_session_switch':
         cb.onSessionSwitch?.(msg.payload?.sessionId as string)
+        break
+      case 'user_session_delete':
+        cb.onSessionDelete?.(msg.payload?.sessionId as string)
+        break
+      case 'user_session_rename':
+        cb.onSessionRename?.(
+          msg.payload?.sessionId as string,
+          msg.payload?.name as string,
+        )
         break
       case 'ping':
         // Application-level heartbeat

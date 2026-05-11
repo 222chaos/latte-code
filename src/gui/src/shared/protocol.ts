@@ -16,6 +16,7 @@ export type ServerMessage =
   | GuiModelsSync
   | GuiSourcesSync
   | GuiPlanSync
+  | GuiCommandsSync
 
 export type ClientMessage =
   | UserInput
@@ -23,6 +24,8 @@ export type ClientMessage =
   | UserDesignSystemRequest
   | UserInterrupt
   | UserSessionSwitch
+  | UserSessionDelete
+  | UserSessionRename
   | Ping
 
 export interface GuiStateSync {
@@ -184,6 +187,21 @@ export interface UserSessionSwitch {
   }
 }
 
+export interface UserSessionDelete {
+  type: 'user_session_delete'
+  payload: {
+    sessionId: string
+  }
+}
+
+export interface UserSessionRename {
+  type: 'user_session_rename'
+  payload: {
+    sessionId: string
+    name: string
+  }
+}
+
 export interface Ping {
   type: 'ping'
 }
@@ -210,6 +228,13 @@ export interface GuiPlanSync {
   type: 'gui_plan_sync'
   payload: {
     planItems: Array<{ id: string; text: string; status: 'pending' | 'in_progress' | 'done' }>
+  }
+}
+
+export interface GuiCommandsSync {
+  type: 'gui_commands_sync'
+  payload: {
+    commands: Array<{ name: string; description: string; descriptionZh?: string; aliases?: string[]; argumentHint?: string }>
   }
 }
 

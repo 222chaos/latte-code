@@ -25,6 +25,7 @@ export default function Tooltip({ children, content, side = 'top', delay = 400 }
   if (!content) return <>{children}</>
 
   const handleEnter = () => {
+    if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => {
       setShow(true)
       requestAnimationFrame(() => setVisible(true))
@@ -38,6 +39,16 @@ export default function Tooltip({ children, content, side = 'top', delay = 400 }
     }
     setVisible(false)
     setTimeout(() => setShow(false), 150)
+  }
+
+  const handleTouch = (e: React.TouchEvent) => {
+    e.preventDefault()
+    setShow(true)
+    requestAnimationFrame(() => setVisible(true))
+    setTimeout(() => {
+      setVisible(false)
+      setTimeout(() => setShow(false), 150)
+    }, 1500)
   }
 
   const positionStyles: Record<string, React.CSSProperties> = {
@@ -54,6 +65,7 @@ export default function Tooltip({ children, content, side = 'top', delay = 400 }
       onMouseLeave={handleLeave}
       onFocus={handleEnter}
       onBlur={handleLeave}
+      onTouchStart={handleTouch}
     >
       {children}
       {show && (

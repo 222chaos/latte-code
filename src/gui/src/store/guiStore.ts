@@ -74,6 +74,7 @@ interface GuiState {
   togglePlanItem: (id: string) => void
   setGenerating: (v: boolean) => void
   setAvailableModels: (models: Array<{ id: string; name: string; description?: string }>) => void
+  setCommands: (commands: Array<{ name: string; description: string; descriptionZh?: string; aliases?: string[]; argumentHint?: string }>) => void
 }
 
 const savedTheme = (() => {
@@ -82,6 +83,14 @@ const savedTheme = (() => {
     if (t === 'dark' || t === 'light') return t
   } catch { /* ignore */ }
   return 'dark'
+})()
+
+const savedSessions = (() => {
+  try {
+    const raw = localStorage.getItem('latte-gui-sessions')
+    if (raw) return JSON.parse(raw) as Session[]
+  } catch { /* ignore */ }
+  return null
 })()
 
 // Apply saved theme on module load
@@ -99,7 +108,7 @@ export const useGuiStore = create<GuiState>((set) => ({
   cost: 0,
   permissionMode: 'default',
   messages: [],
-  sessions: [],
+  sessions: savedSessions ?? [],
   toolCalls: [],
   pendingPermissions: [],
   diffs: [],
@@ -132,7 +141,12 @@ export const useGuiStore = create<GuiState>((set) => ({
     set((s) => ({
       messages: s.messages.map((m) => (m.id === id ? { ...m, ...partial } : m)),
     })),
-  setSessions: (sessions) => set({ sessions }),
+  setSessions: (sessions) => {
+    set({ sessions })
+    try {
+      localStorage.setItem('latte-gui-sessions', JSON.stringify(sessions))
+    } catch { /* ignore */ }
+  },
   addToolCall: (tc) => set((s) => ({ toolCalls: [...s.toolCalls, tc] })),
   updateToolCall: (matcher, partial) =>
     set((s) => ({
@@ -150,7 +164,15 @@ export const useGuiStore = create<GuiState>((set) => ({
     set((s) => ({
       pendingPermissions: s.pendingPermissions.filter((p) => p.requestId !== requestId),
     })),
-  addDiff: (d) => set((s) => ({ diffs: [...s.diffs, d] })),
+  addDiff: (d) => set((s) => {
+    const existing = s.diffs.findIndex((x) => x.filePath === d.filePath)
+    if (existing >= 0) {
+      const updated = [...s.diffs]
+      updated[existing] = d
+      return { diffs: updated }
+    }
+    return { diffs: [...s.diffs, d] }
+  }),
   setDesignSystem: (d) => set({ currentDesignSystem: d }),
   setTheme: (t) => {
     if (typeof document !== 'undefined') {
@@ -169,16 +191,23 @@ export const useGuiStore = create<GuiState>((set) => ({
   clearToolCalls: () => set({ toolCalls: [] }),
   setGenerating: (v: boolean) => set({ isGenerating: v }),
   deleteSession: (id: string) =>
-    set((s) => ({ sessions: s.sessions.filter((sess) => sess.id !== id) })),
+    set((s) => {
+      const next = s.sessions.filter((sess) => sess.id !== id)
+      try { localStorage.setItem('latte-gui-sessions', JSON.stringify(next)) } catch { /* ignore */ }
+      return { sessions: next }
+    }),
   renameSession: (id: string, name: string) =>
-    set((s) => ({
-      sessions: s.sessions.map((sess) => (sess.id === id ? { ...sess, name } : sess)),
-    })),
+    set((s) => {
+      const next = s.sessions.map((sess) => (sess.id === id ? { ...sess, name } : sess))
+      try { localStorage.setItem('latte-gui-sessions', JSON.stringify(next)) } catch { /* ignore */ }
+      return { sessions: next }
+    }),
   togglePlanItem: (id: string) =>
     set((s) => ({
       planItems: s.planItems.map((item) => togglePlanItemRecursive(item, id)),
     })),
   setAvailableModels: (models) => set({ availableModels: models }),
+  setCommands: (commands) => set({ commands }),
 }))
 
 function nextPlanStatus(status: PlanItem['status']): PlanItem['status'] {

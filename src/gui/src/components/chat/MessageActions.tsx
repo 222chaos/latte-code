@@ -57,7 +57,7 @@ export default function MessageActions({ content, role, thinking, onRegenerate, 
         <>
           <Tooltip content="Regenerate" side="bottom" delay={300}>
             <button
-              onClick={onRegenerate}
+              onClick={() => onRegenerate?.()}
               className="flex items-center justify-center h-7 w-7 rounded-lg transition-colors"
               style={{ color: 'var(--text-quaternary)' }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
@@ -96,7 +96,7 @@ export default function MessageActions({ content, role, thinking, onRegenerate, 
       {role === 'user' && onEdit && (
         <Tooltip content="Edit" side="bottom" delay={300}>
           <button
-            onClick={onEdit}
+            onClick={() => onEdit?.()}
             className="flex items-center justify-center h-7 w-7 rounded-lg transition-colors"
             style={{ color: 'var(--text-quaternary)' }}
             onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}

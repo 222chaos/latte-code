@@ -7,8 +7,11 @@ import type { GuiServer } from '../server/guiServer.js'
 import type { LocalJSXCommandContext } from '../types/command.js'
 import type { SDKMessage } from '../entrypoints/sdk/controlTypes.js'
 import type { PermissionDecision } from '../types/permissions.js'
-import type { GuiMessageStream, GuiToolCall, GuiPermissionRequest, GuiDiffPreview, GuiDesignSystem, GuiStateSync, GuiMetadataSync, GuiSessionList, GuiError, GuiModelsSync, GuiSourcesSync, GuiPlanSync, GuiMessageItem } from '../gui/src/shared/protocol.js'
+import type { GuiMessageStream, GuiToolCall, GuiPermissionRequest, GuiDiffPreview, GuiDesignSystem, GuiStateSync, GuiMetadataSync, GuiSessionList, GuiError, GuiModelsSync, GuiSourcesSync, GuiPlanSync, GuiCommandsSync, GuiMessageItem } from '../gui/src/shared/protocol.js'
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
+import { homedir } from 'os'
+import { join } from 'path'
+import { mkdirSync, readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync } from 'fs'
 
 let designMdSkillModule: any = null
 let generateCapabilityModule: any = null
@@ -60,6 +63,7 @@ export class GuiBridge {
   private toolUseNameMap = new Map<string, string>()
   private sessions: Array<{ id: string; name: string; status: 'active' | 'idle' | 'completed'; updatedAt: number }> = []
   private lastUserInput = ''
+  private persistentDir = join(homedir(), '.latte', 'gui-sessions')
   private sources = new Set<string>()
   private currentMessages: GuiMessageItem[] = []
   private sessionMessageSnapshots = new Map<string, GuiMessageItem[]>()
@@ -70,6 +74,9 @@ export class GuiBridge {
   }
 
   async init() {
+    // Load persistent session history before initializing engine
+    this.loadPersistentSessions()
+
     const tools = getAllBaseTools()
     const fileCache = createFileStateCacheWithSizeLimit(100)
 
@@ -97,10 +104,12 @@ export class GuiBridge {
         status: 'active',
         updatedAt: Date.now(),
       })
+      this.savePersistentSessions()
     }
     this.broadcastSessionList()
     this.broadcastMetadata()
     this.broadcastModels()
+    this.broadcastCommands()
     logForDebugging('[GuiBridge] QueryEngine initialized')
   }
 
@@ -126,7 +135,9 @@ export class GuiBridge {
         activeSession.status = 'completed'
         activeSession.updatedAt = Date.now()
         this.sessionMessageSnapshots.set(activeSession.id, [...this.currentMessages])
+        this.saveSessionMessages(activeSession.id, this.currentMessages)
       }
+      this.savePersistentSessions()
       this.currentMessages = []
       this.engine = null
       this.pendingPermissions.clear()
@@ -324,7 +335,9 @@ export class GuiBridge {
     if (currentActive) {
       currentActive.status = 'idle'
       this.sessionMessageSnapshots.set(currentActive.id, [...this.currentMessages])
+      this.saveSessionMessages(currentActive.id, this.currentMessages)
     }
+    this.savePersistentSessions()
 
     const targetSession = this.sessions.find((s) => s.id === targetSessionId)
     if (!targetSession) {
@@ -451,9 +464,11 @@ export class GuiBridge {
     // Sync metadata and lists to newly connected (or reconnected) client.
     // Note: we do NOT send gui_state_sync with messages because the client
     // retains its own message history in Zustand across reconnects.
+    logForDebugging('[GuiBridge] Client connected, syncing state')
     this.broadcastMetadata()
     this.broadcastSessionList()
     this.broadcastModels()
+    this.broadcastCommands()
     this.broadcastSources()
   }
 
@@ -552,6 +567,9 @@ export class GuiBridge {
     onToolUse?: (toolUse: { id: string; name: string; input: Record<string, unknown> }) => void,
     onToolResult?: (toolResult: { toolUseId: string; content: string; isError?: boolean }) => void,
   ) {
+    if (msg.type === 'user' || msg.type === 'assistant') {
+      logForDebugging(`[GuiBridge] 🔍 handleSDKMessage type=${msg.type} content_type=${typeof (msg as any).message?.content} isArray=${Array.isArray((msg as any).message?.content)} blocks=${Array.isArray((msg as any).message?.content) ? (msg as any).message?.content?.map((b: any) => b?.type).join(',') : 'N/A'}`)
+    }
     switch (msg.type) {
       case 'assistant': {
         const content = msg.message?.content
@@ -563,7 +581,9 @@ export class GuiBridge {
             if (block.type === 'text') { text += block.text || '' }
             if (block.type === 'thinking') { thinking += block.thinking || '' }
             if (block.type === 'tool_use') {
-              onToolUse?.({ id: block.id || '', name: block.name || 'unknown', input: block.input || {} })
+              const toolName = block.name || 'unknown'
+              logForDebugging(`[GuiBridge] 🔧 tool_use: name=${toolName} id=${block.id}`)
+              onToolUse?.({ id: block.id || '', name: toolName, input: block.input || {} })
               this.broadcast({
                 type: 'gui_tool_call',
                 payload: {
@@ -573,21 +593,51 @@ export class GuiBridge {
                   status: 'running',
                 },
               } as GuiToolCall)
-              if (block.name === 'FileEditTool' || block.name === 'Edit') {
+              if (block.name === 'FileEditTool' || block.name === 'Edit' || block.name === 'SearchReplace') {
                 const inp = block.input || {}
-                this.pendingFileOps.set(block.id || '', {
+                const opId = block.id || ''
+                const filePath = inp.file_path || inp.path || ''
+                const oldContent = inp.old_string || inp.old_str || ''
+                const newContent = inp.new_string || inp.new_str || ''
+                this.pendingFileOps.set(opId, {
                   toolName: block.name,
-                  filePath: inp.file_path || inp.path || '',
-                  oldContent: inp.old_string || inp.old_str || '',
-                  newContent: inp.new_string || inp.new_str || '',
+                  filePath,
+                  oldContent,
+                  newContent,
                 })
+                if (filePath) {
+                  this.broadcast({
+                    type: 'gui_diff_preview',
+                    payload: {
+                      filePath,
+                      oldContent,
+                      newContent,
+                      toolName: block.name,
+                      accepted: undefined,
+                    },
+                  } as GuiDiffPreview)
+                }
+                logForDebugging(`[GuiBridge] 📝 Registered pendingFileOp + broadcast diff: tool=${block.name} id=${opId} file=${filePath}`)
               } else if (block.name === 'FileWriteTool' || block.name === 'Write') {
                 const inp = block.input || {}
+                const filePath = inp.file_path || inp.path || ''
+                const newContent = inp.content || ''
                 this.pendingFileOps.set(block.id || '', {
                   toolName: block.name,
-                  filePath: inp.file_path || inp.path || '',
-                  newContent: inp.content || '',
+                  filePath,
+                  newContent,
                 })
+                if (filePath) {
+                  this.broadcast({
+                    type: 'gui_diff_preview',
+                    payload: {
+                      filePath,
+                      newContent,
+                      toolName: block.name,
+                      accepted: undefined,
+                    },
+                  } as GuiDiffPreview)
+                }
               } else if (block.name === 'FileReadTool' || block.name === 'Read') {
                 const inp = block.input || {}
                 const filePath = inp.file_path || inp.path || ''
@@ -699,6 +749,7 @@ export class GuiBridge {
               const toolUseId = block.tool_use_id || ''
               onToolResult?.({ toolUseId, content: output, isError: block.is_error })
               const toolName = this.toolUseNameMap.get(toolUseId) || 'result'
+              logForDebugging(`[GuiBridge] 📦 Tool result: toolUseId=${toolUseId} toolName=${toolName} isError=${block.is_error} pendingFileOps.has=${this.pendingFileOps.has(toolUseId)}`)
               this.broadcast({
                 type: 'gui_tool_call',
                 payload: {
@@ -711,6 +762,19 @@ export class GuiBridge {
               } as GuiToolCall)
 
               if (!block.is_error && this.pendingFileOps.has(toolUseId)) {
+                const op = this.pendingFileOps.get(toolUseId)!
+                this.pendingFileOps.delete(toolUseId)
+                this.broadcast({
+                  type: 'gui_diff_preview',
+                  payload: {
+                    filePath: op.filePath,
+                    oldContent: op.oldContent,
+                    newContent: op.newContent || '',
+                    toolName: op.toolName,
+                    accepted: true,
+                  },
+                } as GuiDiffPreview)
+              } else if (block.is_error && this.pendingFileOps.has(toolUseId)) {
                 const op = this.pendingFileOps.get(toolUseId)!
                 this.pendingFileOps.delete(toolUseId)
                 this.broadcast({
@@ -783,6 +847,28 @@ export class GuiBridge {
     }
   }
 
+  private broadcastCommands() {
+    try {
+      const all = this.context.options.commands || []
+      const cmds = all
+        .filter((cmd) => cmd.userInvocable !== false && !cmd.isHidden)
+        .map((cmd) => ({
+          name: cmd.name,
+          description: cmd.description || '',
+          descriptionZh: cmd.descriptionZh,
+          aliases: cmd.aliases,
+          argumentHint: cmd.argumentHint,
+        }))
+      logForDebugging(`[GuiBridge] Broadcasting ${cmds.length} commands (total: ${all.length})`)
+      this.broadcast({
+        type: 'gui_commands_sync',
+        payload: { commands: cmds },
+      } as GuiCommandsSync)
+    } catch (e) {
+      logForDebugging(`[GuiBridge] Failed to broadcast commands: ${e}`)
+    }
+  }
+
   private broadcastSources() {
     const fileNodes = Array.from(this.sources).map((path) => {
       // Handle both Unix '/' and Windows '\\' separators
@@ -807,5 +893,130 @@ export class GuiBridge {
     if (SLASH_COMMANDS.some((cmd) => trimmed.startsWith(cmd + ' ') || trimmed === cmd)) return null
     const firstLine = trimmed.split('\n')[0]
     return firstLine.length > 50 ? firstLine.slice(0, 47) + '...' : firstLine
+  }
+
+  /* ── Session Persistence ── */
+
+  private ensurePersistentDir() {
+    try {
+      mkdirSync(this.persistentDir, { recursive: true })
+    } catch { /* ignore */ }
+  }
+
+  private getIndexPath() {
+    return join(this.persistentDir, 'index.json')
+  }
+
+  private getSessionPath(sessionId: string) {
+    return join(this.persistentDir, `${sessionId}.json`)
+  }
+
+  private loadPersistentSessions() {
+    this.ensurePersistentDir()
+    const indexPath = this.getIndexPath()
+    if (!existsSync(indexPath)) return
+    try {
+      const data = JSON.parse(readFileSync(indexPath, 'utf-8')) as Array<{
+        id: string
+        name: string
+        status: 'active' | 'idle' | 'completed'
+        updatedAt: number
+      }>
+      for (const s of data) {
+        if (s.status === 'active') s.status = 'idle'
+        if (!this.sessions.some((existing) => existing.id === s.id)) {
+          this.sessions.push(s)
+        }
+        const sessionPath = this.getSessionPath(s.id)
+        if (existsSync(sessionPath)) {
+          const messages = JSON.parse(readFileSync(sessionPath, 'utf-8')) as GuiMessageItem[]
+          this.sessionMessageSnapshots.set(s.id, messages)
+        }
+      }
+      logForDebugging(`[GuiBridge] Loaded ${data.length} persistent sessions`)
+    } catch (e) {
+      logForDebugging(`[GuiBridge] Failed to load persistent sessions: ${e}`)
+    }
+  }
+
+  private savePersistentSessions() {
+    this.ensurePersistentDir()
+    try {
+      const data = this.sessions.map((s) => ({ ...s }))
+      writeFileSync(this.getIndexPath(), JSON.stringify(data, null, 2), 'utf-8')
+    } catch (e) {
+      logForDebugging(`[GuiBridge] Failed to save persistent sessions: ${e}`)
+    }
+  }
+
+  private saveSessionMessages(sessionId: string, messages: GuiMessageItem[]) {
+    this.ensurePersistentDir()
+    try {
+      writeFileSync(
+        this.getSessionPath(sessionId),
+        JSON.stringify(messages, null, 2),
+        'utf-8',
+      )
+    } catch (e) {
+      logForDebugging(`[GuiBridge] Failed to save session messages: ${e}`)
+    }
+  }
+
+  private deletePersistentSession(sessionId: string) {
+    try {
+      const sessionPath = this.getSessionPath(sessionId)
+      if (existsSync(sessionPath)) {
+        unlinkSync(sessionPath)
+      }
+    } catch (e) {
+      logForDebugging(`[GuiBridge] Failed to delete persistent session: ${e}`)
+    }
+  }
+
+  private cleanupOrphanedSessionFiles() {
+    try {
+      const files = readdirSync(this.persistentDir)
+      const validIds = new Set(this.sessions.map((s) => s.id))
+      for (const file of files) {
+        if (file === 'index.json') continue
+        const sessionId = file.replace(/\.json$/, '')
+        if (!validIds.has(sessionId)) {
+          unlinkSync(join(this.persistentDir, file))
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  handleSessionDelete(sessionId: string) {
+    const idx = this.sessions.findIndex((s) => s.id === sessionId)
+    if (idx < 0) return
+
+    const session = this.sessions[idx]
+    if (session.status === 'active') {
+      this.broadcast({
+        type: 'gui_error',
+        payload: { message: 'Cannot delete the active session' },
+      } as GuiError)
+      return
+    }
+
+    this.sessions.splice(idx, 1)
+    this.sessionMessageSnapshots.delete(sessionId)
+    this.deletePersistentSession(sessionId)
+    this.savePersistentSessions()
+    this.cleanupOrphanedSessionFiles()
+    this.broadcastSessionList()
+  }
+
+  handleSessionRename(sessionId: string, name: string) {
+    const session = this.sessions.find((s) => s.id === sessionId)
+    if (!session || !name.trim()) return
+    session.name = name.trim()
+    session.updatedAt = Date.now()
+    this.savePersistentSessions()
+    this.broadcastSessionList()
+    if (session.status === 'active') {
+      this.broadcastMetadata()
+    }
   }
 }

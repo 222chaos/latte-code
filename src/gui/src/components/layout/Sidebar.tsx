@@ -16,6 +16,8 @@ export default function Sidebar({ onClose }: Props) {
   const setActiveInspectorTab = useGuiStore((s) => s.setActiveInspectorTab)
   const deleteSession = useGuiStore((s) => s.deleteSession)
   const renameSession = useGuiStore((s) => s.renameSession)
+  const sendDelete = (id: string) => sendWsMessage({ type: 'user_session_delete', payload: { sessionId: id } })
+  const sendRename = (id: string, name: string) => sendWsMessage({ type: 'user_session_rename', payload: { sessionId: id, name } })
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
 
@@ -44,8 +46,10 @@ export default function Sidebar({ onClose }: Props) {
   }
 
   const confirmRename = (id: string) => {
-    if (editValue.trim()) {
-      renameSession(id, editValue.trim())
+    const trimmed = editValue.trim()
+    if (trimmed) {
+      renameSession(id, trimmed)
+      sendRename(id, trimmed)
     }
     setEditingId(null)
   }
@@ -85,6 +89,7 @@ export default function Sidebar({ onClose }: Props) {
           <Tooltip content="Close sidebar" side="bottom">
             <button
               onClick={onClose}
+              aria-label="Close sidebar"
               className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors"
               style={{ color: 'var(--text-secondary)' }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
@@ -175,21 +180,26 @@ export default function Sidebar({ onClose }: Props) {
                     <Tooltip content="Rename" side="bottom" delay={300}>
                       <button
                         onClick={(e) => { e.stopPropagation(); startRename(s.id, s.name) }}
-                        className="flex items-center justify-center h-6 w-6 rounded-md transition-colors"
+                        aria-label={`Rename session "${s.name}"`}
+                        className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors"
                         style={{ color: 'var(--text-quaternary)' }}
                         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
                         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                       >
-                        <Pencil size={12} strokeWidth={1.5} />
+                        <Pencil size={14} strokeWidth={1.5} />
                       </button>
                     </Tooltip>
                     <Tooltip content="Delete" side="bottom" delay={300}>
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          if (window.confirm(`Delete "${s.name}"?`)) deleteSession(s.id)
+                          if (window.confirm(`Delete "${s.name}"?`)) {
+                            deleteSession(s.id)
+                            sendDelete(s.id)
+                          }
                         }}
-                        className="flex items-center justify-center h-6 w-6 rounded-md transition-colors"
+                        aria-label={`Delete session "${s.name}"`}
+                        className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors"
                         style={{ color: 'var(--text-quaternary)' }}
                         onMouseEnter={(e) => {
                           e.currentTarget.style.background = 'rgba(255, 69, 58, 0.12)'
@@ -200,7 +210,7 @@ export default function Sidebar({ onClose }: Props) {
                           e.currentTarget.style.color = 'var(--text-quaternary)'
                         }}
                       >
-                        <Trash2 size={12} strokeWidth={1.5} />
+                        <Trash2 size={14} strokeWidth={1.5} />
                       </button>
                     </Tooltip>
                   </div>

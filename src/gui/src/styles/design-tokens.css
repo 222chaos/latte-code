@@ -184,6 +184,7 @@ html.light .prose code {
 
 html.light .prose pre {
   border-color: var(--border-color-strong);
+  background: rgba(0, 0, 0, 0.04) !important;
 }
 
 /* ── Selection ── */
@@ -323,6 +324,41 @@ button:active:not(:disabled) {
   transform: scale(0.96);
 }
 
+/* ── Reduced Motion Support ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-fade-in,
+  .animate-fade-in-up,
+  .animate-fade-in-scale,
+  .animate-slide-in-right,
+  .animate-slide-in-bottom,
+  .animate-spring-in-right,
+  .animate-pulse-glow {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+
+  .shimmer-bg::after {
+    animation: none !important;
+    background: transparent !important;
+  }
+}
+
+/* ── Keyboard Focus Hover Parity ── */
+button:focus-visible,
+[role="button"]:focus-visible {
+  background: var(--bg-hover);
+}
+
 /* ── Utility ── */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
@@ -425,7 +461,14 @@ button:active:not(:disabled) {
   margin-bottom: 0;
 }
 
-/* ── Streaming cursor inside prose ── */
+/* ── Streaming cursor (inline span variant, controlled by AssistantMessage.tsx) ── */
+@keyframes cursor-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Legacy CSS-only cursor — disabled for block-level last children to avoid
+   cursor appearing inside <pre>, <blockquote>, <table>, headings */
 .prose.streaming-cursor > *:last-child::after {
   content: '';
   display: inline-block;
@@ -438,7 +481,27 @@ button:active:not(:disabled) {
   animation: cursor-pulse 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-@keyframes cursor-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+/* Hide cursor inside block-level elements */
+.prose.streaming-cursor > pre:last-child::after,
+.prose.streaming-cursor > blockquote:last-child::after,
+.prose.streaming-cursor > table:last-child::after,
+.prose.streaming-cursor > h1:last-child::after,
+.prose.streaming-cursor > h2:last-child::after,
+.prose.streaming-cursor > h3:last-child::after,
+.prose.streaming-cursor > h4:last-child::after {
+  display: none !important;
+}
+
+.prose:not(.streaming-cursor) > *:last-child::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: var(--accent);
+  border-radius: 9999px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+  pointer-events: none;
 }

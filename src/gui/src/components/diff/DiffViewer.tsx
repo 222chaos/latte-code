@@ -26,8 +26,8 @@ export default function DiffViewer({ filePath, oldContent, newContent, diff, too
     if (diff) {
       return diff.split('\n').map((line) => ({
         value: line.slice(1),
-        added: line.startsWith('+'),
-        removed: line.startsWith('-'),
+        added: line.startsWith('+') && !line.startsWith('+++'),
+        removed: line.startsWith('-') && !line.startsWith('---'),
       }))
     }
     const changes = diffLines(oldContent ?? '', newContent ?? '')

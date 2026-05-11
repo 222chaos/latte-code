@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect } from 'react'
+import { useMemo, useState, useRef, useEffect, useCallback } from 'react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
@@ -9,6 +9,155 @@ marked.setOptions({
   breaks: true,
   gfm: true,
 })
+
+function enhanceCodeBlocks(container: HTMLElement) {
+  const blocks = container.querySelectorAll('pre code')
+  blocks.forEach((block) => {
+    try { hljs.highlightElement(block as HTMLElement) } catch { /* skip */ }
+  })
+
+  container.querySelectorAll('a').forEach((a) => {
+    if (!a.target && !a.href.startsWith('#')) {
+      a.target = '_blank'
+      a.rel = 'noopener noreferrer'
+    }
+  })
+
+  container.querySelectorAll('img').forEach((img) => {
+    img.style.maxWidth = '100%'
+    img.style.borderRadius = 'var(--radius-md)'
+    img.style.height = 'auto'
+  })
+
+  const pres = container.querySelectorAll('pre')
+  pres.forEach((pre) => {
+    if (pre.querySelector('.code-header')) return
+
+    const code = pre.querySelector('code')
+    const lang = code?.className?.replace('language-', '') || 'text'
+    const displayLang = lang === 'text' ? '' : lang
+
+    const header = document.createElement('div')
+    header.className = 'code-header'
+    header.style.cssText = `
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--card-border);
+      background: rgba(0, 0, 0, 0.2);
+    `
+
+    if (displayLang) {
+      const label = document.createElement('span')
+      label.textContent = displayLang
+      label.style.cssText = `
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-quaternary);
+        font-family: "SF Mono", SFMono-Regular, ui-monospace, monospace;
+      `
+      header.appendChild(label)
+    } else {
+      header.appendChild(document.createElement('span'))
+    }
+
+    const btn = document.createElement('button')
+    btn.className = 'code-copy-btn'
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`
+    btn.style.cssText = `
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 5px;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-quaternary);
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s ease;
+    `
+    btn.title = 'Copy code'
+    btn.setAttribute('tabindex', '0')
+    btn.setAttribute('aria-label', 'Copy code to clipboard')
+    header.appendChild(btn)
+
+    pre.style.position = 'relative'
+    pre.style.padding = '0'
+    pre.insertBefore(header, pre.firstChild)
+
+    if (code) {
+      code.style.padding = '14px'
+      code.style.display = 'block'
+    }
+
+    // Add line numbers
+    if (code) {
+      if (code.querySelector('.code-line-numbers')) {
+        // Already enhanced — skip to prevent duplicate line numbers
+      } else {
+        const lines = code.textContent?.split('\n') || []
+        if (lines.length > 2) {
+          const lineNums = document.createElement('div')
+          lineNums.className = 'code-line-numbers'
+        lineNums.style.cssText = `
+          position: absolute;
+          top: 0;
+          left: 0;
+          padding-top: 14px;
+          padding-left: 8px;
+          text-align: right;
+          user-select: none;
+          pointer-events: none;
+          color: var(--text-quaternary);
+          opacity: 0.5;
+          font-size: 11px;
+          line-height: 1.5;
+          font-family: "SF Mono", SFMono-Regular, ui-monospace, monospace;
+          width: 36px;
+        `
+          lineNums.textContent = lines.map((_, i) => String(i + 1)).join('\n')
+          code.insertBefore(lineNums, code.firstChild)
+          code.style.paddingLeft = '46px'
+        }
+      }
+    }
+
+    const MAX_HEIGHT = 300
+    if (
+      pre.scrollHeight > MAX_HEIGHT &&
+      !pre.querySelector('.code-expand-btn') &&
+      pre.dataset.expanded !== 'true'
+    ) {
+      pre.style.maxHeight = `${MAX_HEIGHT}px`
+      pre.style.overflow = 'hidden'
+      const expandBtn = document.createElement('button')
+      expandBtn.className = 'code-expand-btn'
+      expandBtn.textContent = 'Show more'
+      expandBtn.setAttribute('tabindex', '0')
+      expandBtn.setAttribute('aria-label', 'Expand code block')
+      expandBtn.style.cssText = `
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 32px 14px 10px;
+        border: none;
+        background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.6) 40%);
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        text-align: center;
+        border-bottom-left-radius: 12px;
+        border-bottom-right-radius: 12px;
+      `
+      pre.appendChild(expandBtn)
+    }
+  })
+}
 
 interface Props {
   content: string
@@ -33,9 +182,11 @@ export default function AssistantMessage({ content, thinking, streaming }: Props
     const container = contentRef.current
     if (!container) return
 
-    const handleClick = (e: MouseEvent) => {
-      const expandBtn = (e.target as HTMLElement).closest('.code-expand-btn') as HTMLButtonElement | null
-      if (expandBtn) {
+    const handleClick = (e: MouseEvent | KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      const expandBtn = target.closest('.code-expand-btn') as HTMLButtonElement | null
+      if (expandBtn && (e.type === 'click' || (e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ')) {
+        e.preventDefault()
         const pre = expandBtn.closest('pre') as HTMLPreElement
         pre.style.maxHeight = 'none'
         pre.style.overflow = 'visible'
@@ -82,153 +233,34 @@ export default function AssistantMessage({ content, thinking, streaming }: Props
     }
 
     container.addEventListener('click', handleClick)
+    container.addEventListener('keydown', handleClick)
     container.addEventListener('mouseenter', handleMouseEnter, true)
     container.addEventListener('mouseleave', handleMouseLeave, true)
 
     return () => {
       container.removeEventListener('click', handleClick)
+      container.removeEventListener('keydown', handleClick)
       container.removeEventListener('mouseenter', handleMouseEnter, true)
       container.removeEventListener('mouseleave', handleMouseLeave, true)
       for (const timer of timersRef.current.values()) clearTimeout(timer)
       timersRef.current.clear()
     }
-  }, []) // Empty deps: register once, event delegation handles dynamic elements
+  }, [])
 
-  // Code enhancement: syntax highlighting, headers, copy buttons, collapsible blocks
-  // Skip during streaming to avoid DOM thrashing and visual flickering
+  // Single unified DOM write effect:
+  // 1. Write HTML to DOM (always, both streaming and final)
+  // 2. When streaming ends, enhance code blocks on next frame
   useEffect(() => {
-    if (!contentRef.current) return
-    if (streaming) {
+    const el = contentRef.current
+    if (!el || !html) return
+    el.innerHTML = html
+    if (!streaming) {
+      if (processedRef.current !== html) {
+        processedRef.current = html
+        enhanceCodeBlocks(el)
+      }
+    } else {
       processedRef.current = ''
-      return
-    }
-    if (processedRef.current === html) return
-    processedRef.current = html
-
-    const container = contentRef.current
-
-    // Run syntax highlighting
-    const blocks = container.querySelectorAll('pre code')
-    blocks.forEach((block) => {
-      try { hljs.highlightElement(block as HTMLElement) } catch { /* skip broken highlight */ }
-    })
-
-    // External links open in new tab
-    container.querySelectorAll('a').forEach((a) => {
-      if (!a.target && !a.href.startsWith('#')) {
-        a.target = '_blank'
-        a.rel = 'noopener noreferrer'
-      }
-    })
-
-    // Images: responsive + rounded
-    container.querySelectorAll('img').forEach((img) => {
-      img.style.maxWidth = '100%'
-      img.style.borderRadius = 'var(--radius-md)'
-      img.style.height = 'auto'
-    })
-
-    // Enhance code blocks with header and copy button
-    const pres = container.querySelectorAll('pre')
-    pres.forEach((pre) => {
-      if (pre.querySelector('.code-header')) return
-
-      const code = pre.querySelector('code')
-      const lang = code?.className?.replace('language-', '') || 'text'
-      const displayLang = lang === 'text' ? '' : lang
-
-      const header = document.createElement('div')
-      header.className = 'code-header'
-      header.style.cssText = `
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 8px 14px;
-        border-bottom: 1px solid var(--card-border);
-        background: rgba(0, 0, 0, 0.2);
-      `
-
-      if (displayLang) {
-        const label = document.createElement('span')
-        label.textContent = displayLang
-        label.style.cssText = `
-          font-size: 11px;
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          color: var(--text-quaternary);
-          font-family: "SF Mono", SFMono-Regular, ui-monospace, monospace;
-        `
-        header.appendChild(label)
-      } else {
-        header.appendChild(document.createElement('span'))
-      }
-
-      const btn = document.createElement('button')
-      btn.className = 'code-copy-btn'
-      btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`
-      btn.style.cssText = `
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 5px;
-        border-radius: 6px;
-        background: transparent;
-        color: var(--text-quaternary);
-        cursor: pointer;
-        border: none;
-        transition: all 0.2s ease;
-      `
-      btn.title = 'Copy code'
-      header.appendChild(btn)
-
-      pre.style.position = 'relative'
-      pre.style.padding = '0'
-      pre.insertBefore(header, pre.firstChild)
-
-      if (code) {
-        code.style.padding = '14px'
-        code.style.display = 'block'
-      }
-
-      // Collapsible long code blocks
-      const MAX_HEIGHT = 300
-      if (
-        pre.scrollHeight > MAX_HEIGHT &&
-        !pre.querySelector('.code-expand-btn') &&
-        pre.dataset.expanded !== 'true'
-      ) {
-        pre.style.maxHeight = `${MAX_HEIGHT}px`
-        pre.style.overflow = 'hidden'
-        const expandBtn = document.createElement('button')
-        expandBtn.className = 'code-expand-btn'
-        expandBtn.textContent = 'Show more'
-        expandBtn.style.cssText = `
-          position: absolute;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          padding: 32px 14px 10px;
-          border: none;
-          background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.6) 40%);
-          color: var(--accent);
-          font-size: 12px;
-          font-weight: 600;
-          cursor: pointer;
-          text-align: center;
-          border-bottom-left-radius: 12px;
-          border-bottom-right-radius: 12px;
-        `
-        pre.appendChild(expandBtn)
-      }
-    })
-  }, [html, streaming])
-
-  // During streaming, bypass React's VDOM reconciliation by directly
-  // setting innerHTML. This prevents full DOM rebuilds on every token.
-  useEffect(() => {
-    if (streaming && contentRef.current) {
-      contentRef.current.innerHTML = html
     }
   }, [html, streaming])
 
@@ -282,11 +314,23 @@ export default function AssistantMessage({ content, thinking, streaming }: Props
       )}
 
       {/* ── Main Content ── */}
-      <div
-        ref={contentRef}
-        className={`prose prose-invert prose-sm max-w-none ${streaming && html ? 'streaming-cursor' : ''}`}
-        {...(!streaming ? { dangerouslySetInnerHTML: { __html: html } } : {})}
-      />
+      <div className="inline">
+        <div
+          ref={contentRef}
+          className="prose prose-invert prose-sm max-w-none inline"
+        />
+        {streaming && html && (
+          <span
+            className="inline-block w-[2px] h-[1.1em] align-text-bottom"
+            style={{
+              background: 'var(--accent)',
+              borderRadius: 9999,
+              marginLeft: 2,
+              animation: 'cursor-pulse 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            }}
+          />
+        )}
+      </div>
     </div>
   )
 }

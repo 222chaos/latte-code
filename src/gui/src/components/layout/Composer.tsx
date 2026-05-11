@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { useWebSocket } from '../../hooks/useWebSocket.ts'
 import { useGuiStore } from '../../store/guiStore.ts'
 import { useToastStore } from '../../store/toastStore.ts'
-import { Send, Paperclip, ChevronDown, ArrowUp, Square, X, Clock } from 'lucide-react'
+import { Send, Paperclip, ChevronDown, ArrowUp, Square, X, Clock, Terminal } from 'lucide-react'
 import Tooltip from '../ui/Tooltip.tsx'
 
 const FALLBACK_MODELS = [
@@ -24,6 +24,8 @@ export default function Composer() {
   const [modelOpen, setModelOpen] = useState(false)
   const [focused, setFocused] = useState(false)
   const [attachments, setAttachments] = useState<{ name: string; dataUrl: string }[]>([])
+  const [slashOpen, setSlashOpen] = useState(false)
+  const [slashIndex, setSlashIndex] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const lastSubmitTime = useRef(0)
@@ -32,6 +34,7 @@ export default function Composer() {
   const isGenerating = useGuiStore((s) => s.isGenerating)
   const isHistoryView = useGuiStore((s) => s.isHistoryView)
   const availableModels = useGuiStore((s) => s.availableModels)
+  const commands = useGuiStore((s) => s.commands)
 
   const handleSubmit = useCallback(() => {
     if (isGenerating || isHistoryView) return
@@ -58,14 +61,67 @@ export default function Composer() {
     send({ type: 'user_interrupt' })
   }, [send])
 
+  useEffect(() => {
+    if (!modelOpen) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setModelOpen(false)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [modelOpen])
+
+  const isSlashMode = value.startsWith('/') && !value.includes(' ')
+  const filteredCommands = isSlashMode
+    ? commands.filter((cmd) => cmd.name.toLowerCase().includes(value.slice(1).toLowerCase()))
+    : []
+
+  useEffect(() => {
+    if (isSlashMode && filteredCommands.length > 0) {
+      setSlashOpen(true)
+      setSlashIndex(0)
+    } else {
+      setSlashOpen(false)
+    }
+  }, [value, isSlashMode, filteredCommands.length])
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (slashOpen && filteredCommands.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault()
+          setSlashIndex((i) => (i + 1) % filteredCommands.length)
+          return
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault()
+          setSlashIndex((i) => (i - 1 + filteredCommands.length) % filteredCommands.length)
+          return
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          const cmd = filteredCommands[slashIndex]
+          if (cmd) {
+            setValue(`/${cmd.name} `)
+            setSlashOpen(false)
+          }
+          return
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          setSlashOpen(false)
+          return
+        }
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
         handleSubmit()
       }
+      if (e.key === 'Escape' && modelOpen) {
+        e.preventDefault()
+        setModelOpen(false)
+      }
     },
-    [handleSubmit],
+    [handleSubmit, modelOpen, slashOpen, filteredCommands, slashIndex],
   )
 
   useEffect(() => {
@@ -73,6 +129,7 @@ export default function Composer() {
     if (!el) return
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+    el.style.overflowY = el.scrollHeight > 200 ? 'auto' : 'hidden'
   }, [value])
 
   const models = availableModels.length > 0
@@ -123,7 +180,7 @@ export default function Composer() {
           </div>
         )}
         <div
-          className="flex items-end gap-1.5 md:gap-2 rounded-[20px] md:rounded-[24px] px-3 md:px-4 py-2.5 md:py-3 transition-all"
+          className="relative flex items-end gap-1.5 md:gap-2 rounded-[20px] md:rounded-[24px] px-3 md:px-4 py-2.5 md:py-3 transition-all"
           style={{
             background: 'var(--card-bg)',
             border: focused
@@ -138,6 +195,7 @@ export default function Composer() {
           {/* ── Attach ── */}
           <Tooltip content="Attach file" side="top">
             <button
+              aria-label="Attach file"
               className="flex items-center justify-center h-8 w-8 md:h-9 md:w-9 shrink-0 rounded-xl transition-colors"
               style={{ color: 'var(--text-quaternary)' }}
               onClick={() => fileInputRef.current?.click()}
@@ -156,6 +214,52 @@ export default function Composer() {
               e.target.value = ''
             }}
           />
+
+          {/* ── Slash Command Palette ── */}
+          {slashOpen && filteredCommands.length > 0 && (
+            <div
+              className="absolute bottom-full left-0 right-0 mb-2 max-h-56 overflow-y-auto rounded-[16px] z-50 animate-fade-in-up"
+              style={{
+                background: 'var(--glass-bg-strong)',
+                backdropFilter: 'var(--glass-backdrop-strong)',
+                WebkitBackdropFilter: 'var(--glass-backdrop-strong)',
+                border: '1px solid var(--glass-border)',
+                boxShadow: 'var(--shadow-lg)',
+              }}
+            >
+              {filteredCommands.map((cmd, i) => (
+                <button
+                  key={cmd.name}
+                  onClick={() => {
+                    setValue(`/${cmd.name} `)
+                    setSlashOpen(false)
+                    textareaRef.current?.focus()
+                  }}
+                  className="w-full text-left px-3.5 py-2.5 transition-colors flex items-center gap-3"
+                  style={{
+                    background: i === slashIndex ? 'var(--bg-hover)' : 'transparent',
+                    color: i === slashIndex ? 'var(--accent)' : 'var(--text-secondary)',
+                  }}
+                  onMouseEnter={() => setSlashIndex(i)}
+                >
+                  <Terminal size={14} strokeWidth={1.5} style={{ color: 'var(--text-quaternary)' }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-medium">/{cmd.name}</div>
+                    {cmd.description && (
+                      <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-quaternary)' }}>
+                        {cmd.description}
+                      </div>
+                    )}
+                  </div>
+                  {cmd.argumentHint && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md" style={{ background: 'var(--card-bg)', color: 'var(--text-quaternary)' }}>
+                      {cmd.argumentHint}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* ── Textarea ── */}
           <textarea

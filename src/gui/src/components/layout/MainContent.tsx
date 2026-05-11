@@ -1,10 +1,9 @@
 import { memo, useRef, useEffect, useCallback, useState } from 'react'
 import { useGuiStore } from '../../store/guiStore.ts'
 import { sendWsMessage } from '../../hooks/useWebSocket.ts'
-import { Bot, Sparkles, Zap, Code, FileCode, Bug, X } from 'lucide-react'
+import { Bot, Sparkles, Zap, Code, FileCode, Bug, X, ChevronRight, Wrench } from 'lucide-react'
 import AssistantMessage from '../chat/AssistantMessage.tsx'
 import ToolCallCard from '../chat/ToolCallCard.tsx'
-import ToolResultBlock from '../chat/ToolResultBlock.tsx'
 import TypingIndicator from '../chat/TypingIndicator.tsx'
 import ScrollButton from './ScrollButton.tsx'
 import PermissionCard from '../permissions/PermissionCard.tsx'
@@ -54,7 +53,7 @@ interface MessageRowProps {
   toolCalls: GuiToolCall['payload'][]
 }
 
-const FILE_TOOLS = new Set(['FileEditTool', 'Edit', 'FileWriteTool', 'Write', 'FileReadTool', 'Read'])
+const FILE_TOOLS = new Set(['FileEditTool', 'Edit', 'FileWriteTool', 'Write', 'FileReadTool', 'Read', 'SearchReplace', 'NotebookEdit'])
 
 const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, isGenerating, toolCalls }: MessageRowProps) {
   const isUser = msg.role === 'user'
@@ -62,10 +61,24 @@ const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, i
   const showDivider = idx === 0 || (prevTimestamp !== undefined && !isSameDay(msg.timestamp, prevTimestamp))
   const isStreamTarget = isLast && isGenerating && !isUser
 
+  const nonFileToolUses = msg.toolUses?.filter((tu) => !FILE_TOOLS.has(tu.name))
+  const hasOnlyFileTools = msg.toolUses && msg.toolUses.length > 0 && (!nonFileToolUses || nonFileToolUses.length === 0)
+
+  // Collapsible tool calls — default collapsed when all done, expanded when any running
+  const [showToolCalls, setShowToolCalls] = useState(() => {
+    if (!nonFileToolUses || nonFileToolUses.length === 0) return false
+    const anyRunning = nonFileToolUses.some((tu) => {
+      const call = toolCalls.find((tc) => tc.toolUseId === tu.id)
+      const matchingResult = msg.toolResults?.find((tr) => tr.toolUseId === tu.id)
+      const status = matchingResult ? (matchingResult.isError ? 'error' : 'success') : (call?.status ?? 'running')
+      return status === 'running'
+    })
+    return anyRunning
+  })
+
   return (
-    <div style={{ contentVisibility: 'auto', containIntrinsicSize: '0 80px' }}>
-      {/* ── Date Divider ── */}
-      {showDivider && (
+    <div>
+      {showDivider && idx > 0 && (
         <div className="flex items-center justify-center my-5 md:my-6">
           <div className="h-px flex-1" style={{ background: 'var(--border-color-subtle)' }} />
           <span
@@ -79,7 +92,6 @@ const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, i
       )}
 
       {isUser ? (
-        /* ── User Message ── */
         <div className="flex justify-end group animate-fade-in">
           <div className="max-w-[88%] sm:max-w-[82%] flex flex-col items-end gap-1">
             <div
@@ -116,9 +128,7 @@ const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, i
           </div>
         </div>
       ) : (
-        /* ── AI Message ── */
         <div className="flex gap-3 md:gap-3.5 group animate-fade-in">
-          {/* Avatar */}
           <div
             className="flex h-7 w-7 md:h-8 md:w-8 shrink-0 items-center justify-center rounded-[8px] md:rounded-[10px] mt-0.5"
             style={{
@@ -132,17 +142,23 @@ const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, i
           </div>
 
           <div className="flex-1 min-w-0 pt-0.5">
-            {/* Name + Time + Actions */}
             <div className="flex items-center gap-2 mb-1.5 md:mb-2">
               <span className="text-[12px] md:text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
                 Claude
               </span>
-              <span
-                className="text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                style={{ color: 'var(--text-quaternary)' }}
-              >
-                {time}
-              </span>
+              {isStreamTarget && msg.content && (
+                <span className="text-[10px] font-medium font-mono tabular-nums" style={{ color: 'var(--text-quaternary)' }}>
+                  {msg.content.length.toLocaleString()} chars
+                </span>
+              )}
+              {!isStreamTarget && (
+                <span
+                  className="text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                  style={{ color: 'var(--text-quaternary)' }}
+                >
+                  {time}
+                </span>
+              )}
               <MessageActions
                 content={msg.content ?? ''}
                 role="assistant"
@@ -151,47 +167,76 @@ const MessageRow = memo(function MessageRow({ msg, idx, prevTimestamp, isLast, i
               />
             </div>
 
-            {/* Content */}
-            <div className="text-[14px] md:text-[15px] leading-[1.65] md:leading-[1.7]" style={{ color: 'var(--text-primary)' }}>
-              <AssistantMessage
-                content={msg.content}
-                thinking={msg.thinking}
-                streaming={isStreamTarget}
-              />
-            </div>
-
-            {/* Tool Calls (non-file tools only; file tools shown in DiffPanel) */}
-            {msg.toolUses && msg.toolUses.length > 0 && (
-              <div className="mt-3 md:mt-4 space-y-2 md:space-y-2.5">
-                {msg.toolUses.filter((tu) => !FILE_TOOLS.has(tu.name)).map((tu) => {
-                  const call = toolCalls.find(
-                    (tc) => tc.toolUseId === tu.id || (tc.toolName === tu.name && tc.status === 'running')
-                  )
-                  const matchingResult = msg.toolResults?.find((tr) => tr.toolUseId === tu.id)
-                  const derivedStatus = matchingResult
-                    ? (matchingResult.isError ? 'error' : 'success')
-                    : (call?.status ?? 'running')
-                  return (
-                    <ToolCallCard
-                      key={tu.id}
-                      toolName={tu.name}
-                      input={tu.input}
-                      status={derivedStatus as 'running' | 'success' | 'error'}
-                      output={call?.output ?? matchingResult?.content}
-                      durationMs={call?.durationMs}
-                    />
-                  )
-                })}
+            {(!msg.content && !msg.thinking && hasOnlyFileTools) ? null : (
+              <div className="text-[14px] md:text-[15px] leading-[1.65] md:leading-[1.7]" style={{ color: 'var(--text-primary)' }}>
+                <AssistantMessage
+                  content={msg.content}
+                  thinking={msg.thinking}
+                  streaming={isStreamTarget}
+                />
               </div>
             )}
 
-            {/* Tool Results (non-file tools only; file results shown in DiffPanel) */}
-            {msg.toolResults?.filter((tr) => {
-              const matchingToolName = msg.toolUses?.find((tu) => tu.id === tr.toolUseId)?.name
-              return !matchingToolName || !FILE_TOOLS.has(matchingToolName)
-            }).map((tr) => (
-              <ToolResultBlock key={tr.toolUseId} toolResult={tr} />
-            ))}
+            {nonFileToolUses && nonFileToolUses.length > 0 && (
+              <div className="mt-3 md:mt-4">
+                {/* Tool Calls Toggle — similar to Thinking toggle */}
+                <button
+                  onClick={() => setShowToolCalls(!showToolCalls)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all group/tools mb-2"
+                  style={{
+                    background: 'transparent',
+                    color: 'var(--text-quaternary)',
+                    border: '1px solid var(--border-color-subtle)',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'var(--card-bg)'
+                    e.currentTarget.style.borderColor = 'var(--card-border)'
+                    e.currentTarget.style.color = 'var(--text-tertiary)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent'
+                    e.currentTarget.style.borderColor = 'var(--border-color-subtle)'
+                    e.currentTarget.style.color = 'var(--text-quaternary)'
+                  }}
+                >
+                  <ChevronRight
+                    size={11}
+                    strokeWidth={2}
+                    className={`transition-transform duration-200 ${showToolCalls ? 'rotate-90' : ''}`}
+                  />
+                  <Wrench size={11} strokeWidth={1.5} />
+                  <span>Tool Calls</span>
+                  <span className="text-[10px] font-mono opacity-50">
+                    · {nonFileToolUses.length}
+                  </span>
+                </button>
+
+                {showToolCalls && (
+                  <div className="space-y-2 md:space-y-2.5 animate-fade-in">
+                    {nonFileToolUses.map((tu) => {
+                      const call = toolCalls.find(
+                        (tc) => tc.toolUseId === tu.id
+                      )
+                      const matchingResult = msg.toolResults?.find((tr) => tr.toolUseId === tu.id)
+                      const derivedStatus = matchingResult
+                        ? (matchingResult.isError ? 'error' : 'success')
+                        : (call?.status ?? 'running')
+                      return (
+                        <ToolCallCard
+                          key={tu.id}
+                          toolName={tu.name}
+                          input={tu.input}
+                          status={derivedStatus as 'running' | 'success' | 'error'}
+                          output={call?.output ?? matchingResult?.content}
+                          durationMs={call?.durationMs}
+                          defaultExpanded={true}
+                        />
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -219,6 +264,7 @@ export default function MainContent() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const userScrolledUp = useRef(false)
   const pendingRaf = useRef(0)
+  const diffScrollRef = useRef<HTMLDivElement>(null)
 
   const showDiffPanel = diffs.length > 0
   const diffPanelCount = diffs.length
@@ -227,7 +273,6 @@ export default function MainContent() {
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    // Cancel any pending scroll to avoid stacking RAFs during rapid streaming
     if (pendingRaf.current) cancelAnimationFrame(pendingRaf.current)
     pendingRaf.current = requestAnimationFrame(() => {
       pendingRaf.current = 0
@@ -242,7 +287,15 @@ export default function MainContent() {
         pendingRaf.current = 0
       }
     }
-  }, [messages])
+  }, [messages, isGenerating])
+
+  useEffect(() => {
+    const el = diffScrollRef.current
+    if (!el) return
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight
+    })
+  }, [diffs])
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
@@ -333,7 +386,8 @@ export default function MainContent() {
 
           {isGenerating && (() => {
             const last = messages[messages.length - 1]
-            const showTyping = !last || last.role !== 'assistant' || !last.content
+            const hasToolCalls = last?.toolUses && last.toolUses.length > 0
+            const showTyping = !last || last.role !== 'assistant' || (!last.content && !hasToolCalls)
             return showTyping ? <TypingIndicator /> : null
           })()}
         </div>
@@ -344,7 +398,8 @@ export default function MainContent() {
       {/* ── Right: Diff Panel ── */}
       {showDiffPanel && diffPanelVisible && (
         <div
-          className="w-[320px] md:w-[380px] lg:w-[420px] shrink-0 border-l overflow-y-auto"
+          className="w-[280px] sm:w-[320px] md:w-[380px] lg:w-[420px] shrink-0 border-l overflow-y-auto max-w-[45vw]"
+          ref={diffScrollRef}
           style={{
             background: 'var(--bg-secondary)',
             borderColor: 'var(--border-color)',

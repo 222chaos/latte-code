@@ -129,6 +129,7 @@ export default function App() {
           <div className="flex items-center gap-1.5 md:gap-2">
             <button
               onClick={toggleSidebar}
+              aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
               className="flex items-center justify-center h-8 w-8 md:h-9 md:w-9 rounded-xl transition-colors"
               style={{ color: 'var(--text-secondary)' }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
@@ -139,6 +140,7 @@ export default function App() {
             <div className="w-px h-4 mx-0.5 md:mx-1" style={{ background: 'var(--border-color)' }} />
             <button
               onClick={handleNewChat}
+              aria-label="New chat"
               className="flex items-center gap-1.5 h-8 md:h-9 px-2 md:px-2.5 rounded-xl transition-colors"
               style={{ color: 'var(--text-secondary)' }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}

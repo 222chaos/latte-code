@@ -46,6 +46,7 @@ const fullExperimentalFeatures = [
   'NEW_INIT',
   'POWERSHELL_AUTO_MODE',
   'PROMPT_CACHE_BREAK_DETECTION',
+  'SKILL_INTENT_ROUTER',
   'QUICK_SEARCH',
   'SHOT_STATS',
   'TEAMMEM',
